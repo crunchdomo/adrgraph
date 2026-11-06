@@ -23,6 +23,7 @@ class Rule:
     spec: dict | str
     severity: str
     description: str
+    lang: str | None = None
 
 
 @dataclass
@@ -47,7 +48,8 @@ def _rule(raw: dict, decision_id: str, path: str) -> Rule:
     severity = raw.get("severity", "error")
     if severity not in SEVERITIES:
         raise AdrError(f"{path}: rule {raw['id']} severity must be one of {sorted(SEVERITIES)}")
-    return Rule(str(raw["id"]), decision_id, shapes[0], raw[shapes[0]], severity, str(raw.get("description", "")))
+    return Rule(str(raw["id"]), decision_id, shapes[0], raw[shapes[0]], severity, str(raw.get("description", "")),
+                lang=str(raw["lang"]) if raw.get("lang") else None)
 
 
 def _date(meta: dict, key: str, path: str, did: str) -> str | None:

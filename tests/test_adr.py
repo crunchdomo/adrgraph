@@ -35,3 +35,10 @@ def test_bad_status_is_error(tmp_path):
     (tmp_path / "a.md").write_text("---\nid: ADR-9\ntitle: t\nstatus: maybe\n---\n")
     with pytest.raises(AdrError, match="status"):
         load_adrs([str(tmp_path)])
+
+
+def test_rule_lang(tmp_path):
+    (tmp_path / "a.md").write_text(
+        "---\nid: ADR-9\ntitle: t\nstatus: accepted\nrules:\n  - id: r\n    lang: python\n    cypher: MATCH (a:Ast) RETURN a.id\n  - id: s\n    cypher: MATCH (a:Ast) RETURN a.id\n---\n")
+    rules = load_adrs([str(tmp_path)])[0].rules
+    assert rules[0].lang == "python" and rules[1].lang is None

@@ -38,3 +38,18 @@ def test_selector_against_graph(tmp_path):
     assert ids({"name": "a.f"}) == ["src/a.py::a.f"]
     assert ids({}) == ["os", "src/a.py", "src/a.py::a.K", "src/a.py::a.f"]
     g.close()
+
+
+def test_selectors_skip_ast_unless_asked(tmp_path):
+    from adrgraph.model import AstNode
+    g = Graph(str(tmp_path / "g.lbug"))
+    g.load([Unit("src/a.py", "src/a.py", "a", "python", "file")], [], [], [],
+           ast=[AstNode("src/a.py#0:1:identifier", "src/a.py", "identifier", "Name", "python", 1, 1, 0, 1, "x", "")])
+
+    def ids(sel):
+        frag, params = compile_selector(sel, "n", "s")
+        return sorted(r["id"] for r in g.query(f"MATCH (n) WHERE {frag} RETURN n.id AS id", params))
+
+    assert ids({"path": "src/**"}) == ["src/a.py"]
+    assert ids({"kind": "ast", "name": "x"}) == ["src/a.py#0:1:identifier"]
+    g.close()

@@ -70,3 +70,29 @@ def test_transitive_uses_shortest_paths():
     assert "SHORTEST" in q
     q, _ = compile_rule(rule("only", {"from": {}, "to": {}, "via": "CALLS", "transitive": True}))
     assert "SHORTEST" in q
+
+
+def test_except_on_must_and_never(layered):
+    bad = rule("must", {"every": {"kind": "function"}, "has": {"path": "src/log.py"}, "via": "CALLS",
+                        "except": [{"name": "run"}, {"path": "src/log.py"}]})
+    assert [x.node_id for x in evaluate(layered, bad)] == ["src/contracts/c.py::c.call"]
+    assert bound_ids(layered, bad) == ["src/contracts/c.py::c.call", "src/handlers/h.py::h.view"]
+    n = rule("never", {"from": {"path": "src/handlers/**"}, "to": {"path": "src/contracts/**"}, "via": "IMPORTS", "except": [{"kind": "unit"}]})
+    assert evaluate(layered, n) == []
+
+
+def test_except_validation():
+    with pytest.raises(RuleError, match="ADR-1/r.*pth"):
+        compile_rule(rule("never", {"from": {}, "to": {}, "via": "CALLS", "except": [{"pth": "x"}]}))
+    with pytest.raises(RuleError, match="except"):
+        compile_rule(rule("never", {"from": {}, "to": {}, "via": "CALLS", "except": {"path": "x"}}))
+
+
+def test_portability():
+    from adrgraph.rules import portability
+    assert portability(rule("never", {"from": {}, "to": {}, "via": "CALLS"})) == "semantic"
+    assert portability(rule("cypher", "MATCH (s:Symbol) RETURN s.id AS node_id")) == "semantic"
+    assert portability(rule("cypher", "MATCH (a:Ast {norm:'Decorator'}) RETURN a.id AS node_id")) == "normalised"
+    assert portability(rule("cypher", "MATCH (a:Ast {kind:'decorator'}) RETURN a.id AS node_id")) == "grammar (unspecified)"
+    r = rule("cypher", "MATCH (a:Ast) WHERE a.kind = 'decorator' RETURN a.id AS node_id"); r.lang = "python"
+    assert portability(r) == "grammar (python)"
