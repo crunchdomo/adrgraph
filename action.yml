@@ -1,0 +1,38 @@
+name: adrgraph
+description: Enforce architecture decision records against a knowledge graph of the code and Terraform in a repo.
+inputs:
+  adr:
+    description: ADR directories, one per line.
+    default: docs/adr
+  src:
+    description: Source roots, one per line.
+    default: "."
+  baseline:
+    description: Path to the baseline file.
+    default: .adrgraph/baseline.json
+  format:
+    description: Output format, text or json.
+    default: text
+  python-version:
+    description: Python version to run with.
+    default: "3.12"
+runs:
+  using: composite
+  steps:
+    - uses: actions/setup-python@v5
+      with:
+        python-version: ${{ inputs.python-version }}
+    - shell: bash
+      run: |
+        ref="${{ github.action_ref }}"
+        if [[ "$ref" =~ ^v?[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+          pip install "adrgraph==${ref#v}"
+        else
+          pip install "${{ github.action_path }}"
+        fi
+    - shell: bash
+      run: |
+        args=()
+        while IFS= read -r d; do [ -n "$d" ] && args+=(--adr "$d"); done <<< "${{ inputs.adr }}"
+        while IFS= read -r s; do [ -n "$s" ] && args+=(--src "$s"); done <<< "${{ inputs.src }}"
+        adrgraph check "${args[@]}" --baseline "${{ inputs.baseline }}" --format "${{ inputs.format }}"

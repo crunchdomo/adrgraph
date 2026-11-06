@@ -1,4 +1,7 @@
 .adrgraph/graph.lbug
+.adrgraph/graph.lbug.wal
+.adrgraph/*.lbug
+.adrgraph/*.wal
 .venv/
 __pycache__/
 *.egg-info/
