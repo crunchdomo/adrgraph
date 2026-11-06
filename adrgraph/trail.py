@@ -58,7 +58,7 @@ def decision_text(markdown: str) -> str | None:
                     break
                 if l.strip():
                     para.append(l.strip())
-            return "\n".join(para) or None
+            return " ".join(para) or None
     return None
 
 
@@ -136,9 +136,13 @@ def _node_steps(graph: Graph, rule: Rule, finding: Finding, read_source) -> list
         if not finding.path_nodes and rule.shape != "must":
             norm = _EDGE_NORMS.get(labels)
             if norm:
+                # Any depth under the node's subtree: Ast nodes carry path and line, and the root's byte
+                # range bounds the subtree without walking it.
                 on_line = graph.query(
-                    "MATCH (n)-[:DERIVED_FROM]->(root)-[:CHILD*1..3]->(x:Ast) WHERE n.id = $id AND x.line = $line AND x.norm = $norm "
-                    "RETURN x.id AS id, x.kind AS kind, x.norm AS norm, x.line AS line LIMIT 1",
+                    "MATCH (n)-[:DERIVED_FROM]->(root:Ast) WHERE n.id = $id "
+                    "MATCH (x:Ast) WHERE x.path = root.path AND x.line = $line AND x.norm = $norm "
+                    "AND x.start_byte >= root.start_byte AND x.end_byte <= root.end_byte "
+                    "RETURN x.id AS id, x.kind AS kind, x.norm AS norm, x.line AS line ORDER BY x.start_byte LIMIT 1",
                     {"id": finding.node_id, "line": steps[-1].detail["line"], "norm": norm})
                 if on_line:
                     detail["edge_syntax"] = dict(on_line[0])
@@ -149,9 +153,12 @@ def _node_steps(graph: Graph, rule: Rule, finding: Finding, read_source) -> list
 def _context_step(graph: Graph, finding: Finding, findings: list[Finding], baseline_path: str | None) -> Step:
     governed = set()
     if finding.node_id and finding.severity != "fixed":
-        for r in graph.query("MATCH (d:Decision)-[:BINDS]->(n) WHERE n.id = $id RETURN d.id AS d", {"id": finding.node_id}):
+        # Only decisions that check evaluates (accepted, and proposed as warnings) can pass or fail.
+        for r in graph.query("MATCH (d:Decision)-[:BINDS]->(n) WHERE n.id = $id AND d.status IN ['accepted', 'proposed'] RETURN d.id AS d",
+                             {"id": finding.node_id}):
             governed.add(r["d"])
-        for r in graph.query("MATCH (r:Rule)-[:BINDS]->(n) WHERE n.id = $id RETURN r.decision AS d", {"id": finding.node_id}):
+        for r in graph.query("MATCH (d:Decision)-[:HAS_RULE]->(r:Rule)-[:BINDS]->(n) WHERE n.id = $id AND d.status IN ['accepted', 'proposed'] RETURN d.id AS d",
+                             {"id": finding.node_id}):
             governed.add(r["d"])
     governed.add(finding.decision)
     failing = {f.decision for f in findings if f.node_id == finding.node_id and f.severity in ("error", "warn", "baselined")}

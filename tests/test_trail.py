@@ -47,7 +47,7 @@ def test_only_trail_steps(layered, source_tree):
     t = build_trail(g, [d], f, result.findings, None, reader(source_tree))
     kinds = [s.kind for s in t.steps]
     assert kinds[:4] == ["decision", "rule", "node", "edge"] and kinds[-1] == "context"
-    assert t.steps[0].detail["decision_text"] == "Gateway via contracts.\nSecond line."
+    assert t.steps[0].detail["decision_text"] == "Gateway via contracts. Second line."
     assert t.steps[1].detail["portability"] == "semantic" and t.steps[1].detail["fixed"] is False
     assert t.steps[2].detail["why"] == "outside the from set and not excepted"
     assert t.steps[2].excerpt.highlight == 1 and t.steps[2].excerpt.lines[0].startswith("from src.gateway")
@@ -91,7 +91,7 @@ def test_trail_without_source(layered, source_tree):
 
 def test_decision_text_absent_is_fine(source_tree):
     assert decision_text((source_tree / "ADR-2.md").read_text()) is None
-    assert decision_text((source_tree / "ADR-1.md").read_text()) == "Gateway via contracts.\nSecond line."
+    assert decision_text((source_tree / "ADR-1.md").read_text()) == "Gateway via contracts. Second line."
 
 
 def test_context_lists_other_decisions_and_baseline(layered, source_tree):
@@ -123,3 +123,31 @@ def test_trail_dict_roundtrip(layered, source_tree):
     t = build_trail(g, [d], result.findings[0], result.findings, None, reader(source_tree))
     data = json.loads(json.dumps(trail_dict(t)))
     assert data["finding"]["node_id"] == "src/other/x.py" and data["steps"][0]["kind"] == "decision"
+
+
+def test_context_lists_only_accepted_decisions(layered, source_tree):
+    d1 = dec("ADR-1", [ONLY], source_tree / "ADR-1.md")
+    old = dec("ADR-9", [], source_tree / "ADR-2.md", status="superseded"); old.scope = [{"path": "src/other/**"}]
+    g = graph_with(layered, [d1, old])
+    result = run_check(g, [d1, old], set())
+    t = build_trail(g, [d1, old], result.findings[0], result.findings, None, reader(source_tree))
+    assert [x["decision"] for x in t.steps[-1].detail["governed_by"]] == ["ADR-1"]
+
+
+def test_edge_syntax_found_for_nested_import(tmp_path, monkeypatch):
+    from srcgraph.scan import scan
+    from adrgraph.schema import open_graph
+    (tmp_path / "src").mkdir()
+    (tmp_path / "src" / "a.py").write_text("def f():\n    try:\n        import os\n    except ImportError:\n        pass\n")
+    (tmp_path / "ADR-1.md").write_text("## Decision\n\nNo os.\n")
+    monkeypatch.chdir(tmp_path)
+    g = open_graph(str(tmp_path / "g.lbug"))
+    g.load_code(scan(["."]))
+    d = dec("ADR-1", [Rule("no-os", "ADR-1", "never", {"from": {"path": "src/**"}, "to": {"name": "os"}, "via": "IMPORTS"}, "error", "")], tmp_path / "ADR-1.md")
+    graph_with(g, [d])
+    result = run_check(g, [d], set())
+    assert result.findings[0].line == 3
+    t = build_trail(g, [d], result.findings[0], result.findings, None, reader(tmp_path))
+    syn = next(s for s in t.steps if s.kind == "syntax")
+    assert syn.detail["edge_syntax"]["kind"] == "import_statement" and syn.detail["edge_syntax"]["line"] == 3
+    g.close()

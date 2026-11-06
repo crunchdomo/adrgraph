@@ -12,7 +12,11 @@ No server. The graph lives in an embedded [LadybugDB](https://github.com/Ladybug
 pipx install adrgraph        # or: pip install adrgraph inside a virtualenv
 ```
 
-Until both packages are on PyPI: `pipx install --force <adrgraph wheel> --pip-args "git+https://github.com/crunchdomo/srcgraph"`.
+Until both packages are on PyPI, install straight from git:
+
+```bash
+pipx install git+https://github.com/crunchdomo/adrgraph --pip-args "git+https://github.com/crunchdomo/srcgraph@v0.1.0"
+```
 
 Python 3.11 or later. Python and Terraform (HCL) are supported out of the box.
 
