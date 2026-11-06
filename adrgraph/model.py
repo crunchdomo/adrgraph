@@ -3,7 +3,16 @@ from dataclasses import dataclass, field
 
 UNIT_KINDS = {"file", "package", "module", "external"}
 SYMBOL_KINDS = {"function", "method", "class", "type", "variable", "resource", "module_call", "unresolved"}
-EDGE_LABELS = {"CONTAINS", "IMPORTS", "CALLS", "REFERENCES"}
+EDGE_LABELS = {"CONTAINS", "IMPORTS", "CALLS", "REFERENCES", "INHERITS", "DECORATES", "READS", "WRITES", "TYPE_OF", "OVERRIDES"}
+AST_EDGE_LABELS = {"CHILD", "NEXT"}
+LINK_EDGE_LABEL = "DERIVED_FROM"
+
+# Normalised syntax kinds: one vocabulary across grammars. Owned here; extractors only map onto it.
+NORM_KINDS = ("ClassDef", "FunctionDef", "Call", "Assign", "Import", "Decorator", "Attribute", "Name", "String",
+              "Return", "If", "Loop", "Try", "Lambda", "Parameter", "Argument", "Block", "Comment", "Type", "Literal")
+# Syntax nodes whose source text is stored even though they are not leaves.
+TEXT_NORMS = {"Decorator", "Attribute", "String", "Name", "Literal", "Type", "Import"}
+TEXT_LIMIT = 512
 
 
 @dataclass(frozen=True)
@@ -33,6 +42,23 @@ class Edge:
     label: str
     src: str
     dst: str
+    line: int = 0
+
+
+@dataclass(frozen=True)
+class AstNode:
+    """One named node of a file's syntax tree, exactly as the parser produced it."""
+    id: str
+    path: str
+    kind: str       # the grammar's node type, e.g. class_definition
+    norm: str       # a NORM_KINDS entry or "" when the grammar type has no mapping
+    lang: str
+    line: int
+    end_line: int
+    start_byte: int
+    end_byte: int
+    text: str       # stored for leaves and TEXT_NORMS, else ""
+    field: str      # the field name this node occupies in its parent, or ""
 
 
 @dataclass(frozen=True)
