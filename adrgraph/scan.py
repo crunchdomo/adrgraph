@@ -1,0 +1,136 @@
+"""Walk source roots, run extractors, and resolve raw imports and references into graph edges."""
+import os
+import posixpath
+import re
+from dataclasses import dataclass, field
+
+from adrgraph.extractors import EXTRACTORS
+from adrgraph.model import Edge, Extraction, RawImport, Symbol, Unit, unresolved_id
+from adrgraph.selectors import glob_to_regex
+
+DEFAULT_EXCLUDES = (".git", ".venv", "venv", "node_modules", ".terraform", ".adrgraph", "__pycache__")
+
+
+@dataclass
+class ScanResult:
+    units: list[Unit] = field(default_factory=list)
+    symbols: list[Symbol] = field(default_factory=list)
+    edges: list[Edge] = field(default_factory=list)
+    warnings: list[str] = field(default_factory=list)
+
+
+def module_name(root: str, rel_to_root: str) -> str:
+    name = rel_to_root[:-3].replace("/", ".") if rel_to_root.endswith(".py") else rel_to_root
+    return name.removesuffix(".__init__")
+
+
+def _walk(roots: list[str], excludes: tuple[str, ...]) -> list[tuple[str, str]]:
+    """Yield (root, rel_path_from_cwd) for every file with a registered extractor."""
+    names = {e for e in excludes if "/" not in e and "*" not in e}
+    globs = [re.compile(glob_to_regex(e)) for e in excludes if e not in names]
+    found = []
+    for root in roots:
+        for dirpath, dirnames, filenames in os.walk(root):
+            dirnames[:] = sorted(d for d in dirnames if d not in names and not os.path.islink(os.path.join(dirpath, d)))
+            for fn in sorted(filenames):
+                full = os.path.join(dirpath, fn)
+                if os.path.islink(full) or os.path.splitext(fn)[1] not in EXTRACTORS:
+                    continue
+                rel = posixpath.normpath(full.replace(os.sep, "/"))
+                if any(g.match(rel) for g in globs):
+                    continue
+                found.append((root, rel))
+    return found
+
+
+def _absolute(imp: RawImport, importer: Unit) -> str:
+    if imp.level == 0:
+        return imp.module
+    base = importer.name if importer.kind == "package" else importer.name.rpartition(".")[0]
+    for _ in range(imp.level - 1):
+        base = base.rpartition(".")[0]
+    return f"{base}.{imp.module}" if imp.module and base else (imp.module or base)
+
+
+def scan(roots: list[str], excludes: tuple[str, ...] = DEFAULT_EXCLUDES) -> ScanResult:
+    res = ScanResult()
+    extractions: list[Extraction] = []
+    index: dict[str, list[str]] = {}
+    for root, rel in _walk(roots, excludes):
+        rel_to_root = posixpath.relpath(rel, posixpath.normpath(root.replace(os.sep, "/")))
+        with open(rel, "rb") as fh:
+            source = fh.read()
+        ex = EXTRACTORS[os.path.splitext(rel)[1]](rel, source, module_name(root, rel_to_root))
+        extractions.append(ex)
+        for u in ex.units:
+            index.setdefault(u.name, []).append(u.id)
+
+    ambiguous = {name for name, ids in index.items() if len(ids) > 1}
+    for name in sorted(ambiguous):
+        res.warnings.append(f"ambiguous module {name}: {', '.join(index[name])}")
+
+    units: dict[str, Unit] = {}
+    symbols: dict[str, Symbol] = {}
+    for ex in extractions:
+        units.update((u.id, u) for u in ex.units)
+        symbols.update((s.id, s) for s in ex.symbols)
+        res.edges.extend(ex.edges)
+    by_qualified = {(s.lang, s.qualified): s.id for s in symbols.values()}
+
+    def unit_for(name: str) -> str | None:
+        return index[name][0] if name in index and name not in ambiguous else None
+
+    def external(name: str, lang: str) -> str:
+        if name not in units:
+            units[name] = Unit(name, name, name, lang, "external")
+        return name
+
+    def unresolved(name: str, lang: str) -> str:
+        uid = unresolved_id(name)
+        if uid not in symbols:
+            symbols[uid] = Symbol(uid, name, name, "unresolved", lang, "", 0, 0, "")
+        return uid
+
+    aliases: dict[str, dict[str, str]] = {}
+    for ex in extractions:
+        for imp in ex.imports:
+            importer = units[imp.unit_id]
+            amap = aliases.setdefault(imp.unit_id, {})
+            module = _absolute(imp, importer)
+            if imp.names:
+                for name, alias in imp.names:
+                    dotted = f"{module}.{name}" if module else name
+                    target = unit_for(dotted) or unit_for(module)
+                    if target is None:
+                        target = external(module or dotted, importer.lang)
+                    res.edges.append(Edge("IMPORTS", imp.unit_id, target))
+                    amap[alias] = dotted
+            else:
+                target = unit_for(module) or external(module, importer.lang)
+                res.edges.append(Edge("IMPORTS", imp.unit_id, target))
+                amap[imp.alias or module.split(".")[0]] = module if imp.alias else module.split(".")[0]
+
+    # package -> child CONTAINS by name prefix
+    for u in list(units.values()):
+        if u.kind == "package":
+            for other in units.values():
+                if other.kind in ("module", "package") and other.name.rpartition(".")[0] == u.name:
+                    res.edges.append(Edge("CONTAINS", u.id, other.id))
+
+    for ex in extractions:
+        for ref in ex.refs:
+            src_unit = units[ref.src_id] if ref.src_id in units else units[symbols[ref.src_id].path]
+            lang = src_unit.lang
+            if lang == "python":
+                head, dot, rest = ref.name.partition(".")
+                amap = aliases.get(src_unit.id, {})
+                base = amap[head] if head in amap else f"{src_unit.name}.{head}"
+                qualified = f"{base}{dot}{rest}"
+            else:
+                qualified = ref.name
+            target = by_qualified.get((lang, qualified)) or unresolved(ref.name, lang)
+            res.edges.append(Edge("CALLS" if ref.call else "REFERENCES", ref.src_id, target))
+
+    res.units = list(units.values())
+    res.symbols = list(symbols.values())
+    return res
