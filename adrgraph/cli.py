@@ -11,7 +11,7 @@ from adrgraph.audit import run_audit
 from adrgraph.baseline import load_baseline, save_baseline
 from adrgraph.check import bind, bind_scopes, run_check
 from adrgraph.graph import Graph
-from adrgraph.rules import RuleError, compile_rule
+from adrgraph.rules import RuleError, compile_rule, portability
 from adrgraph.scan import DEFAULT_EXCLUDES, scan
 from adrgraph.selectors import SelectorError
 
@@ -80,11 +80,23 @@ def _print_check(result, out) -> None:
     print(f"baseline: {m.fixed} fixed, {m.new} new", file=out)
 
 
-def _check_json(result) -> dict:
+def _portability_summary(decisions) -> str:
+    """One line: `N rules: a semantic, b normalised, c grammar (lang, ...)`; empty when there are no rules."""
+    kinds = [portability(r) for d in decisions for r in d.rules]
+    if not kinds:
+        return ""
+    grammar = sorted({k[len("grammar ("):-1] for k in kinds if k.startswith("grammar")})
+    g = f"{sum(k.startswith('grammar') for k in kinds)} grammar" + (f" ({', '.join(grammar)})" if grammar else "")
+    return (f"{len(kinds)} rules: {kinds.count('semantic')} semantic, {kinds.count('normalised')} normalised, {g}")
+
+
+def _check_json(result, decisions) -> dict:
     m = result.metrics
+    port = {f"{d.id}/{r.id}": portability(r) for d in decisions for r in d.rules}
     return {"findings": [asdict(f) for f in result.findings],
             "metrics": {"overall": m.overall, "per_adr": m.per_adr,
-                        "per_rule": {k: asdict(v) for k, v in m.per_rule.items()}, "fixed": m.fixed, "new": m.new},
+                        "per_rule": {k: {**asdict(v), "portability": port.get(k)} for k, v in m.per_rule.items()},
+                        "fixed": m.fixed, "new": m.new},
             "failed": result.failed}
 
 
@@ -120,7 +132,7 @@ def _run(args, out, err) -> int:
                 print(f"wrote {args.baseline} ({len(result.current)} violations)", file=out)
                 return 0
             if args.format == "json":
-                print(json.dumps(_check_json(result), indent=2), file=out)
+                print(json.dumps(_check_json(result, decisions), indent=2), file=out)
             else:
                 _print_check(result, out)
             return 1 if result.failed else 0
@@ -130,6 +142,9 @@ def _run(args, out, err) -> int:
         else:
             for f in findings:
                 print(f"{f.severity:<9} {f.check:<13} {f.decision}/{f.rule}  {f.message}", file=out)
+            summary = _portability_summary(decisions)
+            if summary:
+                print(summary, file=out)
         return 1 if any(f.severity == "error" for f in findings) else 0
     finally:
         graph.close()

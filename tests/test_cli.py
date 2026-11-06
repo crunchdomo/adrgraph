@@ -72,3 +72,13 @@ def test_scope_binds_decision_to_code(tmp_path, monkeypatch, capsys):
     assert run(capsys, "build", "--db", db)[0] == 0
     code, out, _ = run(capsys, "query", "--db", db, "MATCH (d:Decision)-[:BINDS]->(n) RETURN count(*) AS c")
     assert code == 0 and int(out.splitlines()[1]) >= 1
+
+
+def test_audit_portability_summary_and_json_portability(cwd, tmp_path, capsys):
+    import re
+    db = str(tmp_path / "g.lbug")
+    code, out, _ = run(capsys, "audit", "--db", db)
+    assert code == 0 and re.match(r"^\d+ rules: \d+ semantic, \d+ normalised, \d+ grammar", out.strip().splitlines()[-1])
+    code, out, _ = run(capsys, "check", "--db", db, "--baseline", str(tmp_path / "b.json"), "--format", "json")
+    data = json.loads(out)
+    assert data["metrics"]["per_rule"]["ADR-0001/gateway-only-via-contracts"]["portability"] == "semantic"
