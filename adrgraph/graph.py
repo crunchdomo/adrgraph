@@ -46,6 +46,16 @@ class Graph:
             spec = ", ".join(f"FROM {a} TO {b}" for a, b in pairs)
             self._conn.execute(f"CREATE REL TABLE {label}({spec})")
 
+    @classmethod
+    def open(cls, path: str) -> "Graph":
+        """Open an existing database without rebuilding the schema."""
+        if not os.path.exists(path):
+            raise RuntimeError(f"{path} does not exist; run `adrgraph build` first")
+        g = cls.__new__(cls)
+        g._db = ladybug.Database(path)
+        g._conn = ladybug.Connection(g._db)
+        return g
+
     def query(self, cypher: str, params: dict | None = None) -> list[dict]:
         result = self._conn.execute(cypher, params or {})
         cols = result.get_column_names()
@@ -82,6 +92,10 @@ class Graph:
             all_edges += [Edge("SUPERSEDES", d.id, s) for s in d.supersedes]
         all_edges += [Edge("BINDS", r, n) for r, n in binds]
 
+        unknown = {i for e in all_edges for i in (e.src, e.dst) if i not in table_of}
+        if unknown:
+            for row in self.query("MATCH (n) WHERE n.id IN $ids RETURN n.id AS id, label(n) AS t", {"ids": sorted(unknown)}):
+                table_of[row["id"]] = row["t"]
         grouped: dict[tuple[str, str, str], list[dict]] = defaultdict(list)
         for e in all_edges:
             src, dst = table_of.get(e.src), table_of.get(e.dst)

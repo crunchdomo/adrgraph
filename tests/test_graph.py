@@ -26,3 +26,13 @@ def test_reopen_is_fresh(tmp_path):
     p = str(tmp_path / "g.lbug")
     g = Graph(p); g.load(units(), [], [], []); g.close()
     g = Graph(p); assert g.count("Unit") == 0; g.close()
+
+
+def test_binds_can_be_loaded_after_nodes(tmp_path):
+    g = Graph(str(tmp_path / "g.lbug"))
+    d = Decision("ADR-1", "t", "accepted", "", "2026-01-01", None, [], "docs/adr/1.md",
+                 [Rule("r", "ADR-1", "never", {}, "error", "")])
+    g.load(units(), [], [d], [])
+    g.load([], [], [], [], binds=[("ADR-1/r", "src/a.py")])
+    assert g.query("MATCH (r:Rule)-[:BINDS]->(n) RETURN n.id AS n") == [{"n": "src/a.py"}]
+    g.close()
