@@ -111,3 +111,23 @@ def test_explain_json(cwd, tmp_path, capsys):
     code, out, _ = run(capsys, "explain", "src/other/x.py:1", "--db", str(tmp_path / "g.lbug"), "--baseline", str(tmp_path / "b.json"), "--format", "json")
     data = json.loads(out)
     assert code == 0 and len(data) == 1 and data[0]["steps"][0]["kind"] == "decision"
+
+
+def test_report_writes_page(cwd, tmp_path, capsys):
+    target = str(tmp_path / "r.html")
+    code, out, _ = run(capsys, "report", "-o", target, "--db", str(tmp_path / "g.lbug"), "--baseline", str(tmp_path / "b.json"))
+    assert code == 0 and out.startswith("wrote ")
+    page = open(target).read()
+    assert "ADR-0001" in page and 'class="finding"' in page
+
+
+def test_check_trails_json(cwd, tmp_path, capsys):
+    code, out, _ = run(capsys, "check", "--db", str(tmp_path / "g.lbug"), "--baseline", str(tmp_path / "b.json"), "--format", "json", "--trails")
+    data = json.loads(out)
+    assert code == 1 and all("steps" in f["trail"] for f in data["findings"])
+
+
+def test_check_trails_requires_json(cwd, tmp_path, capsys):
+    with pytest.raises(SystemExit) as exc:
+        main(["check", "--db", str(tmp_path / "g.lbug"), "--trails"])
+    assert exc.value.code == 2

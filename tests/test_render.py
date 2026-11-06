@@ -43,3 +43,22 @@ def test_render_text_transitive_has_path_lines(layered, tmp_path):
 def test_render_text_source_unavailable(layered, tmp_path):
     text = render_text(trail_for(layered, tmp_path, ONLY, read=lambda p: None))
     assert "(source unavailable)" in text
+
+
+def test_render_html_structure(layered, tmp_path):
+    from adrgraph.render.html import render_html
+    from adrgraph.check import Metrics
+    t = trail_for(layered, tmp_path, ONLY)
+    d = Decision("ADR-1", "t", "accepted", "", "2026-01-01", None, [], "a.md", [ONLY])
+    html = render_html([t], [d], Metrics(per_adr={"ADR-1": 0.5}), {"ADR-1": ["src/gateway/client.py"]})
+    assert "<title>adrgraph report</title>" in html and "<script" not in html
+    assert html.count('class="finding"') == 1 and html.count('class="adr"') == 1
+    assert "<mark>" in html and "from src.gateway import client" in html
+
+
+def test_report_with_no_findings():
+    from adrgraph.render.html import render_html
+    from adrgraph.check import Metrics
+    d = Decision("ADR-1", "t", "accepted", "", "2026-01-01", None, [], "a.md", [])
+    html = render_html([], [d], Metrics(), {})
+    assert "no findings" in html and html.count('class="adr"') == 1

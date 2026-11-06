@@ -2,6 +2,7 @@
 import argparse
 import datetime
 import json
+import os
 import sys
 from dataclasses import asdict
 
@@ -15,6 +16,7 @@ from adrgraph.adr import AdrError, Decision, load_adrs
 from adrgraph.audit import run_audit
 from adrgraph.baseline import load_baseline, save_baseline
 from adrgraph.check import bind, bind_scopes, run_check
+from adrgraph.render.html import render_html
 from adrgraph.render.json import trail_dict
 from adrgraph.render.text import render_text
 from adrgraph.rules import RuleError, compile_rule, portability
@@ -64,6 +66,11 @@ def _parser() -> argparse.ArgumentParser:
     c.add_argument("--format", choices=["text", "json"], default="text")
     c.add_argument("--baseline", default=BASELINE)
     c.add_argument("--write-baseline", action="store_true", help="record current violations as the baseline")
+    c.add_argument("--trails", action="store_true", help="with --format json: include the provenance trail per finding")
+    rp = sub.add_parser("report", help="write a self-contained HTML report")
+    common(rp)
+    rp.add_argument("-o", "--output", default=".adrgraph/report.html")
+    rp.add_argument("--baseline", default=BASELINE)
     a = sub.add_parser("audit", help="check the ADRs against each other")
     common(a)
     a.add_argument("--format", choices=["text", "json"], default="text")
@@ -137,10 +144,14 @@ def _portability_summary(decisions) -> str:
     return (f"{len(kinds)} rules: {kinds.count('semantic')} semantic, {kinds.count('normalised')} normalised, {g}")
 
 
-def _check_json(result, decisions) -> dict:
+def _check_json(result, decisions, trails=None) -> dict:
     m = result.metrics
     port = {f"{d.id}/{r.id}": portability(r) for d in decisions for r in d.rules}
-    return {"findings": [asdict(f) for f in result.findings],
+    findings = [asdict(f) for f in result.findings]
+    if trails is not None:
+        for f, t in zip(findings, trails):
+            f["trail"] = trail_dict(t)
+    return {"findings": findings,
             "metrics": {"overall": m.overall, "per_adr": m.per_adr,
                         "per_rule": {k: {**asdict(v), "portability": port.get(k)} for k, v in m.per_rule.items()},
                         "fixed": m.fixed, "new": m.new},
@@ -193,10 +204,29 @@ def _run(args, out, err) -> int:
                 print(f"wrote {args.baseline} ({len(result.current)} violations)", file=out)
                 return 0
             if args.format == "json":
-                print(json.dumps(_check_json(result, decisions), indent=2), file=out)
+                trails = None
+                if args.trails:
+                    source = Source(".")
+                    trails = [build_trail(graph, decisions, f, result.findings, args.baseline, source.lines) for f in result.findings]
+                print(json.dumps(_check_json(result, decisions, trails), indent=2), file=out)
             else:
                 _print_check(result, out)
             return 1 if result.failed else 0
+        if args.command == "report":
+            result = run_check(graph, decisions, load_baseline(args.baseline))
+            source = Source(".")
+            trails = [build_trail(graph, decisions, f, result.findings, args.baseline, source.lines) for f in result.findings]
+            binds = {}
+            for key, nodes in bind(graph, decisions).items():
+                binds.setdefault(key.split("/", 1)[0], []).extend(nodes)
+            for did, nodes in bind_scopes(graph, decisions).items():
+                binds.setdefault(did, []).extend(nodes)
+            binds = {k: sorted(set(v)) for k, v in binds.items()}
+            os.makedirs(os.path.dirname(os.path.abspath(args.output)), exist_ok=True)
+            with open(args.output, "w", encoding="utf-8") as fh:
+                fh.write(render_html(trails, decisions, result.metrics, binds))
+            print(f"wrote {args.output} ({len(trails)} findings)", file=out)
+            return 0
         findings = run_audit(graph, decisions, datetime.date.today(), strict=args.strict)
         if args.format == "json":
             print(json.dumps([asdict(f) for f in findings], indent=2), file=out)
@@ -212,7 +242,10 @@ def _run(args, out, err) -> int:
 
 
 def main(argv: list[str] | None = None) -> int:
-    args = _parser().parse_args(argv)
+    parser = _parser()
+    args = parser.parse_args(argv)
+    if args.command == "check" and args.trails and args.format != "json":
+        parser.error("--trails requires --format json")
     try:
         return _run(args, sys.stdout, sys.stderr)
     except (AdrError, RuleError, SelectorError, RuntimeError) as exc:
