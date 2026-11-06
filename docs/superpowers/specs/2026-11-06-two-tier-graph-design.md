@@ -243,6 +243,10 @@ vocabulary is owned by the core", enforced as `never from {path: "adrgraph/extra
   map, a decorator built at runtime does not.
 - The syntax tier roughly multiplies graph size by 35. Fine to a few million nodes; beyond that
   an opt-out flag is the upgrade.
+- The tree walk is the only Python-bound stage (about 1 s per 17k lines; parse, load and
+  queries are native). Upgrade path if a large repo makes it the bottleneck: first tree-sitter
+  queries (pattern matching in C, returning only matches), then a Rust extension for the walk
+  alone. Not before a repo demonstrates the need.
 - `NEXT` edges double the sibling edge count. Kept because order matters for rules like "the
   first statement in every handler is a permission check"; drop if size ever bites first.
 
