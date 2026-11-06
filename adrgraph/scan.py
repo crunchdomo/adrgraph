@@ -24,22 +24,34 @@ def module_name(root: str, rel_to_root: str) -> str:
     return name.removesuffix(".__init__")
 
 
+def _rel(path: str) -> str:
+    """Path relative to the current directory, POSIX separators."""
+    return posixpath.normpath(os.path.relpath(path).replace(os.sep, "/"))
+
+
 def _walk(roots: list[str], excludes: tuple[str, ...]) -> list[tuple[str, str]]:
     """Yield (root, rel_path_from_cwd) for every file with a registered extractor."""
-    names = {e for e in excludes if "/" not in e and "*" not in e}
-    globs = [re.compile(glob_to_regex(e)) for e in excludes if e not in names]
+    names = {e for e in excludes if "/" not in e and not any(c in e for c in "*?")}
+    globs = [re.compile(glob_to_regex(e.rstrip("/"))) for e in excludes if e not in names]
+
+    def excluded(rel: str) -> bool:
+        parts = rel.split("/")
+        if any(p in names for p in parts):
+            return True
+        return any(g.fullmatch("/".join(parts[:i])) for i in range(1, len(parts) + 1) for g in globs)
+
     found = []
     for root in roots:
         for dirpath, dirnames, filenames in os.walk(root):
-            dirnames[:] = sorted(d for d in dirnames if d not in names and not os.path.islink(os.path.join(dirpath, d)))
+            dirnames[:] = sorted(d for d in dirnames
+                                 if not os.path.islink(os.path.join(dirpath, d)) and not excluded(_rel(os.path.join(dirpath, d))))
             for fn in sorted(filenames):
                 full = os.path.join(dirpath, fn)
                 if os.path.islink(full) or os.path.splitext(fn)[1] not in EXTRACTORS:
                     continue
-                rel = posixpath.normpath(full.replace(os.sep, "/"))
-                if any(g.match(rel) for g in globs):
-                    continue
-                found.append((root, rel))
+                rel = _rel(full)
+                if not excluded(rel):
+                    found.append((root, rel))
     return found
 
 
@@ -52,12 +64,24 @@ def _absolute(imp: RawImport, importer: Unit) -> str:
     return f"{base}.{imp.module}" if imp.module and base else (imp.module or base)
 
 
+def _hint(res: ScanResult, index: dict[str, list[str]], name: str) -> None:
+    """Warn when an import went external but a scanned module has that name under a deeper prefix (src layout)."""
+    for key in index:
+        if key.endswith("." + name):
+            root = key[: -len(name) - 1].replace(".", "/")
+            msg = (f"import '{name}' resolved as external but matches scanned module '{key}'; "
+                   f"if '{root}/' is a source root, pass --src {root}")
+            if msg not in res.warnings:
+                res.warnings.append(msg)
+            return
+
+
 def scan(roots: list[str], excludes: tuple[str, ...] = DEFAULT_EXCLUDES) -> ScanResult:
     res = ScanResult()
     extractions: list[Extraction] = []
     index: dict[str, list[str]] = {}
     for root, rel in _walk(roots, excludes):
-        rel_to_root = posixpath.relpath(rel, posixpath.normpath(root.replace(os.sep, "/")))
+        rel_to_root = posixpath.relpath(rel, _rel(root))
         with open(rel, "rb") as fh:
             source = fh.read()
         ex = EXTRACTORS[os.path.splitext(rel)[1]](rel, source, module_name(root, rel_to_root))
@@ -75,7 +99,11 @@ def scan(roots: list[str], excludes: tuple[str, ...] = DEFAULT_EXCLUDES) -> Scan
         units.update((u.id, u) for u in ex.units)
         symbols.update((s.id, s) for s in ex.symbols)
         res.edges.extend(ex.edges)
-    by_qualified = {(s.lang, s.qualified): s.id for s in symbols.values()}
+    # Python names are global (module paths); other languages resolve within a directory.
+    def scope(lang: str, path: str) -> str:
+        return "" if lang == "python" else posixpath.dirname(path)
+
+    by_qualified = {(s.lang, scope(s.lang, s.path), s.qualified): s.id for s in symbols.values()}
 
     def unit_for(name: str) -> str | None:
         return index[name][0] if name in index and name not in ambiguous else None
@@ -103,10 +131,14 @@ def scan(roots: list[str], excludes: tuple[str, ...] = DEFAULT_EXCLUDES) -> Scan
                     target = unit_for(dotted) or unit_for(module)
                     if target is None:
                         target = external(module or dotted, importer.lang)
+                        _hint(res, index, module or dotted)
                     res.edges.append(Edge("IMPORTS", imp.unit_id, target))
                     amap[alias] = dotted
             else:
-                target = unit_for(module) or external(module, importer.lang)
+                target = unit_for(module)
+                if target is None:
+                    target = external(module, importer.lang)
+                    _hint(res, index, module)
                 res.edges.append(Edge("IMPORTS", imp.unit_id, target))
                 amap[imp.alias or module.split(".")[0]] = module if imp.alias else module.split(".")[0]
 
@@ -128,7 +160,7 @@ def scan(roots: list[str], excludes: tuple[str, ...] = DEFAULT_EXCLUDES) -> Scan
                 qualified = f"{base}{dot}{rest}"
             else:
                 qualified = ref.name
-            target = by_qualified.get((lang, qualified)) or unresolved(ref.name, lang)
+            target = by_qualified.get((lang, scope(lang, src_unit.path), qualified)) or unresolved(qualified, lang)
             res.edges.append(Edge("CALLS" if ref.call else "REFERENCES", ref.src_id, target))
 
     res.units = list(units.values())

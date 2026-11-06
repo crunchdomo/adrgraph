@@ -1,4 +1,5 @@
 """Load ADR markdown files (YAML frontmatter + prose) into Decision and Rule records."""
+import datetime
 import glob
 import os
 from dataclasses import dataclass, field
@@ -49,8 +50,22 @@ def _rule(raw: dict, decision_id: str, path: str) -> Rule:
     return Rule(str(raw["id"]), decision_id, shapes[0], raw[shapes[0]], severity, str(raw.get("description", "")))
 
 
+def _date(meta: dict, key: str, path: str, did: str) -> str | None:
+    value = meta.get(key)
+    if value in (None, ""):
+        return None
+    try:
+        datetime.date.fromisoformat(str(value))
+    except ValueError:
+        raise AdrError(f"{path}: {did} {key} must be an ISO date (YYYY-MM-DD), got {value!r}") from None
+    return str(value)
+
+
 def _decision(path: str) -> Decision | None:
-    meta = frontmatter.load(path).metadata
+    try:
+        meta = frontmatter.load(path).metadata
+    except Exception as exc:  # yaml.YAMLError and friends
+        raise AdrError(f"{path}: cannot parse frontmatter: {exc}") from exc
     if "id" not in meta:
         return None
     did = str(meta["id"])
@@ -69,8 +84,8 @@ def _decision(path: str) -> Decision | None:
         title=str(meta["title"]),
         status=meta["status"],
         owner=str(meta.get("owner", "")),
-        date=str(meta.get("date", "")),
-        review_date=str(meta["review_date"]) if meta.get("review_date") else None,
+        date=_date(meta, "date", path, did) or "",
+        review_date=_date(meta, "review_date", path, did),
         supersedes=[str(s) for s in supersedes],
         path=path,
         rules=rules,

@@ -42,3 +42,13 @@ def test_calls_including_module_scope():
 def test_syntax_error_does_not_crash():
     e = ex("src/broken.py")
     assert e.units[0].path == "src/broken.py" and any(s.name == "ok" for s in e.symbols)
+
+
+def test_multi_name_import():
+    e = extract("m.py", b"import os, src.gateway.client as gc, sys\n", "m")
+    assert [(i.module, i.alias) for i in e.imports] == [("os", None), ("src.gateway.client", "gc"), ("sys", None)]
+
+
+def test_non_call_attribute_reference():
+    e = extract("m.py", b"from src.gateway import client\nsession = client.session\n\nclass K:\n    def m(self):\n        return self.x.y\n", "m")
+    assert [(r.src_id, r.name, r.call) for r in e.refs] == [("m.py", "client.session", False)]

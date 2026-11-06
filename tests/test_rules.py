@@ -1,6 +1,6 @@
 import pytest
 from adrgraph.adr import Rule
-from adrgraph.rules import compile_rule, evaluate, RuleError, bound_selector
+from adrgraph.rules import compile_rule, evaluate, RuleError, bound_ids
 
 
 def rule(shape, spec, rid="r"):
@@ -59,6 +59,14 @@ def test_rule_errors(shape, spec, msg):
         compile_rule(rule(shape, spec))
 
 
-def test_bound_selector():
-    assert bound_selector(rule("only", {"from": {"a": 1}, "to": {"b": 2}, "via": "X"})) == {"b": 2}
-    assert bound_selector(rule("cypher", "MATCH (n) RETURN n")) is None
+def test_bound_ids(layered):
+    assert bound_ids(layered, rule("only", {"from": {"path": "src/contracts/**"}, "to": {"path": "src/gateway/client.py"}, "via": "IMPORTS"})) == ["src/contracts/c.py", "src/other/x.py"]
+    assert bound_ids(layered, rule("never", {"from": {"path": "src/db/**"}, "to": {}, "via": "CALLS"})) == ["src/db/q.py", "src/db/q.py::q.run"]
+    assert bound_ids(layered, rule("cypher", "MATCH (n) RETURN n")) is None
+
+
+def test_transitive_uses_shortest_paths():
+    q, _ = compile_rule(rule("never", {"from": {}, "to": {}, "via": "CALLS", "transitive": True}))
+    assert "SHORTEST" in q
+    q, _ = compile_rule(rule("only", {"from": {}, "to": {}, "via": "CALLS", "transitive": True}))
+    assert "SHORTEST" in q

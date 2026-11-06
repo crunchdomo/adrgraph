@@ -19,10 +19,11 @@ def test_severities_and_metrics(layered):
     assert sev[("db", "src/handlers/h.py::h.view")] == "warn"
     assert sev[("x", "src/handlers/h.py::h.view")] == "warn"      # proposed -> warn
     assert r.failed
-    assert r.metrics.per_rule["ADR-1/gw"].bound == 1 and r.metrics.per_rule["ADR-1/gw"].violations == 1
-    # ADR-1: gw bound 1 (the `to` node) with 1 violation; db bound 2 (h.py unit + h.view) with 1 violation -> 1 - 2/3
-    assert r.metrics.per_adr["ADR-1"] == pytest.approx(1 / 3) and r.metrics.per_adr["ADR-2"] == pytest.approx(0.5)
-    assert r.metrics.overall == pytest.approx(0.4) and r.metrics.new == 3 and r.metrics.fixed == 0
+    # only: bound = distinct nodes reaching `to` (c.py, x.py) -> 2, 1 violation
+    assert r.metrics.per_rule["ADR-1/gw"].bound == 2 and r.metrics.per_rule["ADR-1/gw"].violations == 1
+    # ADR-1: gw 2 bound / 1 violation; db bound 2 (h.py unit + h.view) / 1 violation -> 1 - 2/4
+    assert r.metrics.per_adr["ADR-1"] == pytest.approx(0.5) and r.metrics.per_adr["ADR-2"] == pytest.approx(0.5)
+    assert r.metrics.overall == pytest.approx(0.5) and r.metrics.new == 3 and r.metrics.fixed == 0
 
 
 def test_skipped_statuses_and_orphan(layered):
@@ -44,7 +45,13 @@ def test_baseline_roundtrip_and_ratchet(layered, tmp_path):
 
 def test_bind(layered):
     b = bind(layered, [dec("ADR-1", "accepted", [ONLY, Rule("c", "ADR-1", "cypher", "MATCH (n) RETURN n", "error", "")])])
-    assert b == {"ADR-1/gw": ["src/gateway/client.py"], "ADR-1/c": []}
+    assert b == {"ADR-1/gw": ["src/contracts/c.py", "src/other/x.py"], "ADR-1/c": []}
+
+
+def test_only_compliance_never_negative(layered):
+    # 1-node `to`, 2 reachers, 1 violator: compliance must be 0.5, not negative
+    r = run_check(layered, [dec("ADR-1", "accepted", [ONLY])], set())
+    assert 0 <= r.metrics.overall <= 1 and r.metrics.overall == pytest.approx(0.5)
 
 
 def test_missing_baseline_is_empty(tmp_path):

@@ -83,7 +83,7 @@ adrgraph build                 # just build .adrgraph/graph.lbug
 adrgraph query "MATCH (u:Unit)-[:IMPORTS]->(v:Unit) RETURN u.path, v.name LIMIT 10"
 ```
 
-`--adr` and `--src` repeat. `--exclude` adds names or globs to the defaults (`.git`, `.venv`, `node_modules`, `.terraform`, ...). `--format json` on `check` and `audit`.
+`--adr` and `--src` repeat. With a `src/` layout (code imports `gateway.client`, not `src.gateway.client`) pass `--src src` so imports resolve; adrgraph warns when an import went unresolved but matches a scanned module under a deeper prefix. `--exclude` adds names or globs to the defaults (`.git`, `.venv`, `node_modules`, `.terraform`, ...). `--format json` on `check` and `audit`.
 
 Rules on `proposed` decisions run as warnings. Rules on `superseded` or `deprecated` decisions are skipped by `check` and reported by `audit` if they would still fire.
 
@@ -98,7 +98,7 @@ From then on `check` reports baselined violations without failing, flags new one
 
 ### Metrics
 
-`check` ends with per-ADR and overall compliance (1 minus violations over bound nodes) and the number of violations fixed and new against the baseline. A rule whose selectors match nothing reports `n/a`, never 100%.
+`check` ends with per-ADR and overall compliance (1 minus violations over bound nodes) and the number of violations fixed and new against the baseline. Bound nodes are the population a rule is measured against: the `from` set for `never`, the `every` set for `must`, and for `only` every node that reaches `to`. A rule with an empty population reports `n/a`, never 100%. `audit` flags any selector that matches nothing.
 
 ## GitHub Action
 

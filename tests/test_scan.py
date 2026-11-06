@@ -48,3 +48,45 @@ def test_excludes(tmp_path, monkeypatch):
     (tmp_path / "ok.py").write_text("")
     monkeypatch.chdir(tmp_path)
     assert [u.id for u in scan(["."], excludes=(".venv", "gen/**")).units] == ["ok.py"]
+
+
+def test_terraform_refs_scoped_to_directory(tmp_path, monkeypatch):
+    for d in ("infra/a", "infra/b"):
+        (tmp_path / d).mkdir(parents=True)
+    (tmp_path / "infra/a/main.tf").write_text('resource "aws_s3_bucket" "logs" {}\nresource "aws_s3_bucket_policy" "p" {\n  bucket = aws_s3_bucket.logs.id\n}\n')
+    (tmp_path / "infra/b/main.tf").write_text('resource "aws_s3_bucket" "logs" {}\n')
+    monkeypatch.chdir(tmp_path)
+    e = {(d.label, d.src, d.dst) for d in scan(["."]).edges}
+    assert ("REFERENCES", "infra/a/main.tf::aws_s3_bucket_policy.p", "infra/a/main.tf::aws_s3_bucket.logs") in e
+    assert not any(dst == "infra/b/main.tf::aws_s3_bucket.logs" for lbl, _, dst in e if lbl == "REFERENCES")
+
+
+def test_absolute_root_yields_relative_paths(tmp_path, monkeypatch):
+    (tmp_path / "pkg").mkdir()
+    (tmp_path / "pkg" / "m.py").write_text("x = 1\n")
+    monkeypatch.chdir(tmp_path)
+    assert [u.id for u in scan([str(tmp_path / "pkg")]).units] == ["pkg/m.py"]
+
+
+def test_exclude_path_prunes_directory(tmp_path, monkeypatch):
+    (tmp_path / "tests" / "fixtures").mkdir(parents=True)
+    (tmp_path / "tests" / "fixtures" / "f.py").write_text("")
+    (tmp_path / "tests" / "t.py").write_text("")
+    monkeypatch.chdir(tmp_path)
+    assert [u.id for u in scan(["."], excludes=("tests/fixtures",)).units] == ["tests/t.py"]
+    assert [u.id for u in scan(["."], excludes=("tests/fix*",)).units] == ["tests/t.py"]
+
+
+def test_src_layout_warns_when_external_matches_scanned_module(tmp_path, monkeypatch):
+    (tmp_path / "src").mkdir()
+    (tmp_path / "src" / "a.py").write_text("import b\n")
+    (tmp_path / "src" / "b.py").write_text("")
+    monkeypatch.chdir(tmp_path)
+    res = scan(["."])
+    assert any("--src src" in w and "b" in w for w in res.warnings)
+
+
+def test_unresolved_uses_alias_resolved_name(tmp_path, monkeypatch):
+    (tmp_path / "m.py").write_text("import requests as r\nr.get()\n")
+    monkeypatch.chdir(tmp_path)
+    assert ("CALLS", "m.py", "unresolved::requests.get") in {(d.label, d.src, d.dst) for d in scan(["."]).edges}

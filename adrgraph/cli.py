@@ -11,7 +11,7 @@ from adrgraph.audit import run_audit
 from adrgraph.baseline import load_baseline, save_baseline
 from adrgraph.check import bind, run_check
 from adrgraph.graph import Graph
-from adrgraph.rules import RuleError
+from adrgraph.rules import RuleError, compile_rule
 from adrgraph.scan import DEFAULT_EXCLUDES, scan
 from adrgraph.selectors import SelectorError
 
@@ -22,6 +22,9 @@ BASELINE = ".adrgraph/baseline.json"
 def build(adr_dirs: list[str], src_roots: list[str], excludes: tuple[str, ...], db_path: str
           ) -> tuple[Graph, list[Decision], list[str]]:
     decisions = load_adrs(adr_dirs)
+    for d in decisions:
+        for r in d.rules:
+            compile_rule(r)  # fail fast with decision/rule in the message, before any scanning
     result = scan(src_roots, excludes)
     graph = Graph(db_path)
     graph.load(result.units, result.symbols, decisions, result.edges)

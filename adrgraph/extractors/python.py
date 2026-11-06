@@ -25,16 +25,17 @@ def _dotted(node: Node) -> str | None:
     return None
 
 
-def _import(node: Node, unit_id: str) -> RawImport | None:
+def _imports(node: Node, unit_id: str) -> list[RawImport]:
     line = node.start_point.row + 1
     if node.type == "import_statement":
-        target = node.named_children[0] if node.named_children else None
-        if target is None:
-            return None
-        if target.type == "aliased_import":
-            return RawImport(unit_id, _text(target.child_by_field_name("name")), 0, line,
-                             alias=_text(target.child_by_field_name("alias")))
-        return RawImport(unit_id, _text(target), 0, line)
+        out = []
+        for target in node.named_children:
+            if target.type == "aliased_import":
+                out.append(RawImport(unit_id, _text(target.child_by_field_name("name")), 0, line,
+                                     alias=_text(target.child_by_field_name("alias"))))
+            elif target.type == "dotted_name":
+                out.append(RawImport(unit_id, _text(target), 0, line))
+        return out
     # import_from_statement: from <module> import <names>
     module_node = node.child_by_field_name("module_name")
     level = 0
@@ -56,7 +57,7 @@ def _import(node: Node, unit_id: str) -> RawImport | None:
             names.append((_text(c), _text(c)))
     if any(c.type == "wildcard_import" for c in node.children):
         names.append(("*", "*"))
-    return RawImport(unit_id, module, level, line, names=tuple(names))
+    return [RawImport(unit_id, module, level, line, names=tuple(names))]
 
 
 def extract(rel_path: str, source: bytes, module_name: str) -> Extraction:
@@ -74,9 +75,7 @@ def extract(rel_path: str, source: bytes, module_name: str) -> Extraction:
         for child in node.children:
             t = child.type
             if t in ("import_statement", "import_from_statement"):
-                imp = _import(child, rel_path)
-                if imp:
-                    ex.imports.append(imp)
+                ex.imports.extend(_imports(child, rel_path))
             elif t == "function_definition" and not in_function:
                 qualified = f"{scope}.{_text(child.child_by_field_name('name'))}"
                 sym = symbol(child, qualified, "method" if in_class else "function")
@@ -101,7 +100,17 @@ def extract(rel_path: str, source: bytes, module_name: str) -> Extraction:
                 name = _dotted(child.child_by_field_name("function"))
                 if name:
                     ex.refs.append(RawRef(owner, name, child.start_point.row + 1, True))
-                walk(child, scope, owner, in_class, in_function)
+                    args = child.child_by_field_name("arguments")
+                    if args is not None:
+                        walk(args, scope, owner, in_class, in_function)
+                else:
+                    walk(child, scope, owner, in_class, in_function)
+            elif t == "attribute":
+                name = _dotted(child)
+                if name and name.split(".", 1)[0] not in ("self", "cls"):
+                    ex.refs.append(RawRef(owner, name, child.start_point.row + 1, False))
+                elif not name:
+                    walk(child, scope, owner, in_class, in_function)
             else:
                 walk(child, scope, owner, in_class, in_function)
 

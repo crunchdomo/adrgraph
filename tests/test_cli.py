@@ -45,3 +45,18 @@ def test_bad_adr_exits_2(tmp_path, monkeypatch, capsys):
     monkeypatch.chdir(tmp_path)
     code, _, err = run(capsys, "check", "--db", str(tmp_path / "g.lbug"))
     assert code == 2 and "ADR-1/r" in err and "FLIES" in err
+
+
+@pytest.mark.parametrize("body,needle", [
+    ("rules:\n  - id: r\n    never: {from: {}, via: CALLS}\n", "ADR-1/r"),            # missing `to`
+    ("rules:\n  - id: r\n    never: {from: {pth: x}, to: {}, via: CALLS}\n", "ADR-1/r"),  # bad selector key
+    ("review_date: soon\n", "review_date"),
+    ("rules: [\n", "x.md"),                                                        # YAML syntax error
+])
+def test_malformed_adr_exits_2_naming_the_culprit(tmp_path, monkeypatch, capsys, body, needle):
+    (tmp_path / "docs" / "adr").mkdir(parents=True)
+    (tmp_path / "docs" / "adr" / "x.md").write_text(f"---\nid: ADR-1\ntitle: t\nstatus: accepted\n{body}---\n")
+    monkeypatch.chdir(tmp_path)
+    for cmd in ("check", "audit"):
+        code, _, err = run(capsys, cmd, "--db", str(tmp_path / "g.lbug"))
+        assert code == 2 and needle in err and "Traceback" not in err

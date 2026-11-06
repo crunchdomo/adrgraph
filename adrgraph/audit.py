@@ -3,9 +3,8 @@ import datetime
 from dataclasses import dataclass
 
 from adrgraph.adr import Decision, Rule
-from adrgraph.check import matched_ids
 from adrgraph.graph import Graph
-from adrgraph.rules import evaluate
+from adrgraph.rules import evaluate, matched_ids
 
 _SELECTOR_KEYS = {"only": ("from", "to"), "never": ("from", "to"), "must": ("every", "has")}
 

@@ -4,8 +4,7 @@ from dataclasses import dataclass, field
 from adrgraph.adr import Decision
 from adrgraph.baseline import Key
 from adrgraph.graph import Graph, rule_key
-from adrgraph.rules import bound_selector, evaluate
-from adrgraph.selectors import compile_selector
+from adrgraph.rules import bound_ids, evaluate
 
 SEVERITIES = ("error", "warn", "baselined", "fixed")
 
@@ -44,18 +43,8 @@ class CheckResult:
     current: set[Key]
 
 
-def matched_ids(graph: Graph, selector: dict) -> list[str]:
-    frag, params = compile_selector(selector, "n", "s")
-    return sorted(r["id"] for r in graph.query(f"MATCH (n) WHERE {frag} RETURN n.id AS id", params))
-
-
 def bind(graph: Graph, decisions: list[Decision]) -> dict[str, list[str]]:
-    out = {}
-    for d in decisions:
-        for r in d.rules:
-            sel = bound_selector(r)
-            out[rule_key(d.id, r.id)] = matched_ids(graph, sel) if sel is not None else []
-    return out
+    return {rule_key(d.id, r.id): bound_ids(graph, r) or [] for d in decisions for r in d.rules}
 
 
 def _compliance(rules: list[RuleMetrics]) -> float | None:
@@ -82,7 +71,7 @@ def run_check(graph: Graph, decisions: list[Decision], baseline: set[Key]) -> Ch
                 k = (d.id, r.id, v.node_id)
                 current.add(k)
                 findings.append(Finding("baselined" if k in baseline else severity, d.id, r.id, v.node_id, v.path, v.line, v.message))
-            rm = RuleMetrics(len(bound[key]) if bound_selector(r) is not None else None, len(violations))
+            rm = RuleMetrics(len(bound[key]) if r.shape != "cypher" else None, len(violations))
             metrics.per_rule[key] = rm
             adr_rules.append(rm)
         metrics.per_adr[d.id] = _compliance(adr_rules)
