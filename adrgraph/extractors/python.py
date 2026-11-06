@@ -13,7 +13,7 @@ _PARSER = Parser(Language(tree_sitter_python.language()))
 PY_NORM = {
     "class_definition": "ClassDef", "function_definition": "FunctionDef", "call": "Call",
     "assignment": "Assign", "augmented_assignment": "Assign",
-    "import_statement": "Import", "import_from_statement": "Import",
+    "import_statement": "Import", "import_from_statement": "Import", "future_import_statement": "Import",
     "decorator": "Decorator", "attribute": "Attribute", "identifier": "Name", "string": "String",
     "return_statement": "Return", "if_statement": "If", "for_statement": "Loop", "while_statement": "Loop",
     "try_statement": "Try", "lambda": "Lambda",
@@ -53,7 +53,7 @@ def _imports(node: Node, unit_id: str, lines: LineIndex) -> list[RawImport]:
     # import_from_statement: from <module> import <names>
     module_node = node.child_by_field_name("module_name")
     level = 0
-    module = ""
+    module = "__future__" if node.type == "future_import_statement" else ""
     if module_node is not None:
         if module_node.type == "relative_import":
             for c in module_node.children:
@@ -117,7 +117,7 @@ def extract(rel_path: str, source: bytes, module_name: str) -> Extraction:
     def walk(node: Node, scope: str, owner: str, in_class: bool, in_function: bool) -> None:
         for child in node.children:
             t = child.type
-            if t in ("import_statement", "import_from_statement"):
+            if t in ("import_statement", "import_from_statement", "future_import_statement"):
                 ex.imports.extend(_imports(child, rel_path, lines))
             elif t in ("function_definition", "class_definition") and not in_function:
                 define(child, scope, owner, in_class)

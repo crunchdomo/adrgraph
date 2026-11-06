@@ -138,3 +138,8 @@ def test_inherits_skips_keywords_comments_splats_and_unwraps_subscripts():
     src = b"import abc\nclass M(abc.ABC,  # a comment\n        metaclass=abc.ABCMeta, *extra, Generic[T]):\n    pass\n"
     e = extract("m.py", src, "m")
     assert sorted(r.name for r in e.refs if r.relation == "inherits") == ["Generic", "abc.ABC"]
+
+
+def test_future_import_is_recorded():
+    e = extract("m.py", b"from __future__ import annotations\nimport os\n", "m")
+    assert [(i.module, i.names) for i in e.imports] == [("__future__", (("annotations", "annotations"),)), ("os", ())]
