@@ -18,6 +18,7 @@ class Finding:
     path: str
     line: int
     message: str
+    path_nodes: tuple[str, ...] = ()
 
 
 @dataclass
@@ -70,7 +71,7 @@ def run_check(graph: Graph, decisions: list[Decision], baseline: set[Key]) -> Ch
             for v in violations:
                 k = (d.id, r.id, v.node_id)
                 current.add(k)
-                findings.append(Finding("baselined" if k in baseline else severity, d.id, r.id, v.node_id, v.path, v.line, v.message))
+                findings.append(Finding("baselined" if k in baseline else severity, d.id, r.id, v.node_id, v.path, v.line, v.message, v.path_nodes))
             rm = RuleMetrics(len(bound[key]) if r.shape != "cypher" else None, len(violations))
             metrics.per_rule[key] = rm
             adr_rules.append(rm)

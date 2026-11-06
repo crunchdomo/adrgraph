@@ -20,11 +20,11 @@ def layered(tmp_path):
              U("src/db/q.py", "db.q"), U("src/log.py", "log")]
     view, run, info, call = (S("src/handlers/h.py", "h.view", 3), S("src/db/q.py", "q.run", 1),
                              S("src/log.py", "log.info", 1), S("src/contracts/c.py", "c.call", 2))
-    edges = [Edge("IMPORTS", "src/handlers/h.py", "src/contracts/c.py"),
-             Edge("IMPORTS", "src/contracts/c.py", "src/gateway/client.py"),
-             Edge("IMPORTS", "src/other/x.py", "src/gateway/client.py"),
-             Edge("CALLS", view.id, call.id), Edge("CALLS", call.id, run.id),
-             Edge("CALLS", run.id, view.id), Edge("CALLS", view.id, info.id)]
+    edges = [Edge("IMPORTS", "src/handlers/h.py", "src/contracts/c.py", line=2),
+             Edge("IMPORTS", "src/contracts/c.py", "src/gateway/client.py", line=1),
+             Edge("IMPORTS", "src/other/x.py", "src/gateway/client.py", line=1),
+             Edge("CALLS", view.id, call.id, line=5), Edge("CALLS", call.id, run.id, line=3),
+             Edge("CALLS", run.id, view.id, line=2), Edge("CALLS", view.id, info.id, line=6)]
     g.load(units, [view, run, info, call], [], edges)
     yield g
     g.close()

@@ -96,3 +96,15 @@ def test_portability():
     assert portability(rule("cypher", "MATCH (a:Ast {kind:'decorator'}) RETURN a.id AS node_id")) == "grammar (unspecified)"
     r = rule("cypher", "MATCH (a:Ast) WHERE a.kind = 'decorator' RETURN a.id AS node_id"); r.lang = "python"
     assert portability(r) == "grammar (python)"
+
+
+def test_direct_import_violation_reports_import_line(layered):
+    v = evaluate(layered, rule("never", {"from": {"path": "src/handlers/**"}, "to": {"path": "src/contracts/**"}, "via": "IMPORTS"}))
+    assert [(x.node_id, x.line) for x in v] == [("src/handlers/h.py", 2)]
+
+
+def test_transitive_violation_explains_path(layered):
+    v = evaluate(layered, rule("never", {"from": {"path": "src/handlers/**"}, "to": {"path": "src/db/**"}, "via": "CALLS", "transitive": True}))
+    assert v[0].path_nodes == ("src/handlers/h.py::h.view", "src/contracts/c.py::c.call", "src/db/q.py::q.run")
+    assert v[0].message == "reaches src/db/q.py::q.run via src/contracts/c.py::c.call -> src/db/q.py::q.run"
+    assert v[0].line == 5

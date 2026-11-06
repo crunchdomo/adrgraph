@@ -8,6 +8,12 @@ from adrgraph.selectors import SelectorError, compile_selector
 
 MAX_HOPS = 10
 _RETURN = "RETURN DISTINCT {a}.id AS node_id, {a}.path AS path, {a}.line AS line, {msg} AS message"
+# Direct edge rules also return the edge's own line; transitive rules return the path and its first hop's line.
+_RETURN_EDGE = ("RETURN DISTINCT {a}.id AS node_id, {a}.path AS path, {a}.line AS line, r.line AS edge_line, "
+                "{msg} AS message")
+_RETURN_PATH = ("RETURN {a}.id AS node_id, {a}.path AS path, {a}.line AS line, "
+                "list_transform(rels(p), r -> r.line)[1] AS edge_line, "
+                "list_transform(nodes(p), x -> x.id) AS path_nodes, {msg} AS message")
 _REQUIRED = ("only", "never", "must", "cypher")
 _KEYS = {
     "only": {"from", "to", "via", "transitive", "except"},
@@ -30,6 +36,7 @@ class Violation:
     path: str
     line: int
     message: str
+    path_nodes: tuple[str, ...] = ()
 
 
 def matched_ids(graph: Graph, selector: dict, excepts: list[dict] = ()) -> list[str]:
@@ -102,7 +109,7 @@ def _relation(rule: Rule) -> tuple[str, dict]:
     if not isinstance(transitive, bool):
         raise err("transitive must be true or false")
     if not transitive:
-        return f"-[:{via}]->", {}
+        return f"-[r:{via}]->", {}
     if rule.shape == "only":
         n, pn = compile_selector(rule.spec["from"], "n", "n")
         return f"-[:{via}* SHORTEST 1..{MAX_HOPS} (r, n | WHERE NOT ({n}))]->", pn
@@ -147,7 +154,10 @@ def compile_rule(rule: Rule) -> tuple[str, dict]:
         t, pt = compile_selector(spec["to"], "b", "t")
         rel, pr = _relation(rule)
         cond = f"NOT ({f})" if rule.shape == "only" else f"({f})"
-        q = f"MATCH (a){rel}(b) WHERE {cond}{xf} AND ({t}) " + _RETURN.format(a="a", msg="'reaches ' + b.id")
+        transitive = bool(spec.get("transitive", False))
+        head = "MATCH p = (a)" if transitive else "MATCH (a)"
+        ret = (_RETURN_PATH if transitive else _RETURN_EDGE).format(a="a", msg="'reaches ' + b.id")
+        q = f"{head}{rel}(b) WHERE {cond}{xf} AND ({t}) " + ret
         return q, {**pf, **pr, **pt, **xp}
     except SelectorError as exc:
         raise err(str(exc)) from exc
@@ -159,13 +169,21 @@ def evaluate(graph: Graph, rule: Rule) -> list[Violation]:
         rows = graph.query(cypher, params)
     except RuntimeError as exc:
         raise RuleError(f"{rule.decision}/{rule.id}: query failed: {exc}") from exc
-    seen, out = set(), []
     for row in rows:
         for col in ("node_id", "path", "line", "message"):
             if col not in row:
                 raise RuleError(f"{rule.decision}/{rule.id}: query must return {col}")
+    # Several rows per node (one per edge or path): keep the one with the lowest line.
+    rows.sort(key=lambda r: (r["node_id"], int(r.get("edge_line") or r["line"] or 0)))
+    seen, out = set(), []
+    for row in rows:
         if row["node_id"] in seen:
             continue
         seen.add(row["node_id"])
-        out.append(Violation(rule.decision, rule.id, row["node_id"], row["path"] or "", int(row["line"] or 0), str(row["message"])))
+        line = int(row.get("edge_line") or row["line"] or 0)
+        path_nodes = tuple(row.get("path_nodes") or ())
+        message = str(row["message"])
+        if path_nodes:
+            message = f"reaches {path_nodes[-1]} via {' -> '.join(path_nodes[1:])}"
+        out.append(Violation(rule.decision, rule.id, row["node_id"], row["path"] or "", line, message, path_nodes))
     return sorted(out, key=lambda v: (v.path, v.line, v.node_id))
