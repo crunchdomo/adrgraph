@@ -243,10 +243,13 @@ vocabulary is owned by the core", enforced as `never from {path: "adrgraph/extra
   map, a decorator built at runtime does not.
 - The syntax tier roughly multiplies graph size by 35. Fine to a few million nodes; beyond that
   an opt-out flag is the upgrade.
-- The tree walk is the only Python-bound stage (about 1 s per 17k lines; parse, load and
-  queries are native). Upgrade path if a large repo makes it the bottleneck: first tree-sitter
-  queries (pattern matching in C, returning only matches), then a Rust extension for the walk
-  alone. Not before a repo demonstrates the need.
+- The tree walk is the only Python-bound stage. Measured on Django (531k lines, 2,943 files,
+  3.0M named nodes, 4.5M edges): parse+walk+CSV in Python 19.2 s, COPY 5.5 s, total 24.7 s,
+  database file 627 MB; a 2-hop query over the tier answers in about 30 ms. On the f1 repo
+  (17k lines) the same stage is about 1 s. Upgrade path if the Python share matters: first
+  tree-sitter queries (pattern matching in C, returning only matches), then a Rust extension for
+  the walk alone, which would bring Django to roughly 8 s. Not before a repo demonstrates the
+  need; the 627 MB file is the more likely first complaint, and `--no-ast` is its answer.
 - `NEXT` edges double the sibling edge count. Kept because order matters for rules like "the
   first statement in every handler is a permission check"; drop if size ever bites first.
 
@@ -262,7 +265,9 @@ rules reach `Ast` nodes directly and are unaffected.
 - LadybugDB DDL for `Ast`, `CHILD`, `NEXT`, `DERIVED_FROM`, the new semantic rel tables, and
   the `line` property on existing rel tables.
 - The CSV writer: quoting, the temp directory's lifetime, and whether milestone 1's node tables
-  also move to COPY FROM (they should; one loader is simpler than two).
+  also move to COPY FROM (they should; one loader is simpler than two). Known: LadybugDB's
+  parallel CSV reader rejects quoted newlines, so `text` must have `\n`/`\r` escaped before
+  writing (measured path), or the `Ast` table loaded with `PARALLEL=FALSE`.
 - The syntax-tier walk as a shared helper under `adrgraph/extractors/` taking (tree, mapping,
   path), used by both extractors.
 - `READS`/`WRITES`/`TYPE_OF`/`OVERRIDES` get the same from/to pairs as `REFERENCES`.
