@@ -55,3 +55,10 @@ def test_scope_must_be_a_list_of_maps(tmp_path):
     (tmp_path / "a.md").write_text("---\nid: ADR-3\ntitle: t\nstatus: accepted\nscope: src/**\n---\n")
     with pytest.raises(AdrError, match="scope"):
         load_adrs([str(tmp_path)])
+
+
+def test_scalar_relations_are_rejected(tmp_path):
+    for key in ("depends_on", "conflicts_with", "supersedes"):
+        (tmp_path / "a.md").write_text(f"---\nid: ADR-3\ntitle: t\nstatus: accepted\n{key}: ADR-0001\n---\n")
+        with pytest.raises(AdrError, match=key):
+            load_adrs([str(tmp_path)])

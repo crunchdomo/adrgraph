@@ -113,8 +113,8 @@ class Graph:
         for d in decisions:
             all_edges += [Edge("HAS_RULE", d.id, rule_key(d.id, r.id)) for r in d.rules]
             all_edges += [Edge("SUPERSEDES", d.id, s) for s in d.supersedes]
-            all_edges += [Edge("DEPENDS_ON", d.id, s) for s in getattr(d, "depends_on", [])]
-            all_edges += [Edge("CONFLICTS_WITH", d.id, s) for s in getattr(d, "conflicts_with", [])]
+            all_edges += [Edge("DEPENDS_ON", d.id, s) for s in d.depends_on]
+            all_edges += [Edge("CONFLICTS_WITH", d.id, s) for s in d.conflicts_with]
         all_edges += [Edge("BINDS", r, n) for r, n in binds]
 
         unknown = {i for e in all_edges for i in (e.src, e.dst) if i not in table_of}
@@ -136,14 +136,14 @@ class Graph:
                     continue
                 path = os.path.join(tmp, f"{table}.csv")
                 with open(path, "w", newline="", encoding="utf-8") as fh:
-                    w = csv.writer(fh)
+                    w = csv.writer(fh, quoting=csv.QUOTE_NONNUMERIC)  # quoted "" loads as '', an empty cell as NULL
                     for item in items:
                         w.writerow([escape(v) if isinstance(v, str) else v for v in (item[c] for c in _COLS[table])])
                 self._conn.execute(f"COPY {table} FROM '{path}'")
             for (label, src, dst), items in grouped.items():
                 path = os.path.join(tmp, f"{label}_{src}_{dst}.csv")
                 with open(path, "w", newline="", encoding="utf-8") as fh:
-                    w = csv.writer(fh)
+                    w = csv.writer(fh, quoting=csv.QUOTE_NONNUMERIC)
                     for item in items:
                         w.writerow([escape(v) if isinstance(v, str) else v for v in item])
                 self._conn.execute(f"COPY {label} FROM '{path}' (from='{src}', to='{dst}')")

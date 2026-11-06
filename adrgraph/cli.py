@@ -13,7 +13,7 @@ from adrgraph.check import bind, bind_scopes, run_check
 from adrgraph.graph import Graph
 from adrgraph.rules import RuleError, compile_rule, portability
 from adrgraph.scan import DEFAULT_EXCLUDES, scan
-from adrgraph.selectors import SelectorError
+from adrgraph.selectors import SelectorError, compile_selector
 
 DB = ".adrgraph/graph.lbug"
 BASELINE = ".adrgraph/baseline.json"
@@ -25,6 +25,11 @@ def build(adr_dirs: list[str], src_roots: list[str], excludes: tuple[str, ...], 
     for d in decisions:
         for r in d.rules:
             compile_rule(r)  # fail fast with decision/rule in the message, before any scanning
+        for sel in d.scope:
+            try:
+                compile_selector(sel, "n", "s")
+            except SelectorError as exc:
+                raise AdrError(f"{d.path}: {d.id} scope: {exc}") from exc
     result = scan(src_roots, excludes)
     graph = Graph(db_path)
     graph.load(result.units, result.symbols, decisions, result.edges, ast=result.ast, ast_edges=result.ast_edges)

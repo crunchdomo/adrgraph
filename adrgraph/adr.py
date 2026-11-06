@@ -83,7 +83,13 @@ def _decision(path: str) -> Decision | None:
     ids = [r.id for r in rules]
     if len(ids) != len(set(ids)):
         raise AdrError(f"{path}: {did} has duplicate rule ids")
-    supersedes = meta.get("supersedes") or []
+    def id_list(key: str) -> list[str]:
+        value = meta.get(key) or []
+        if not isinstance(value, list):
+            raise AdrError(f"{path}: {did} {key} must be a list of decision ids, got {value!r}")
+        return [str(s) for s in value]
+
+    supersedes = id_list("supersedes")
     scope = meta.get("scope") or []
     if not isinstance(scope, list) or not all(isinstance(x, dict) for x in scope):
         raise AdrError(f"{path}: {did} scope must be a list of selector maps")
@@ -94,11 +100,11 @@ def _decision(path: str) -> Decision | None:
         owner=str(meta.get("owner", "")),
         date=_date(meta, "date", path, did) or "",
         review_date=_date(meta, "review_date", path, did),
-        supersedes=[str(s) for s in supersedes],
+        supersedes=supersedes,
         path=path,
         rules=rules,
-        depends_on=[str(s) for s in meta.get("depends_on") or []],
-        conflicts_with=[str(s) for s in meta.get("conflicts_with") or []],
+        depends_on=id_list("depends_on"),
+        conflicts_with=id_list("conflicts_with"),
         scope=scope,
     )
 

@@ -82,3 +82,11 @@ def test_audit_portability_summary_and_json_portability(cwd, tmp_path, capsys):
     code, out, _ = run(capsys, "check", "--db", db, "--baseline", str(tmp_path / "b.json"), "--format", "json")
     data = json.loads(out)
     assert data["metrics"]["per_rule"]["ADR-0001/gateway-only-via-contracts"]["portability"] == "semantic"
+
+
+def test_bad_scope_selector_names_the_decision(tmp_path, monkeypatch, capsys):
+    (tmp_path / "docs" / "adr").mkdir(parents=True)
+    (tmp_path / "docs" / "adr" / "x.md").write_text("---\nid: ADR-7\ntitle: t\nstatus: accepted\nscope:\n  - { nmae: \"x\" }\n---\n")
+    monkeypatch.chdir(tmp_path)
+    code, _, err = run(capsys, "check", "--db", str(tmp_path / "g.lbug"))
+    assert code == 2 and "ADR-7" in err and "nmae" in err and "Traceback" not in err

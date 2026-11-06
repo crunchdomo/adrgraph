@@ -87,3 +87,12 @@ def test_decision_relations_and_scope_binds(tmp_path):
     assert g.query("MATCH (x:Decision)-[:DEPENDS_ON]->(y:Decision) RETURN x.id AS x, y.id AS y") == [{"x": "ADR-2", "y": "ADR-1"}]
     assert g.query("MATCH (d:Decision)-[:BINDS]->(u:Unit) RETURN d.id AS d, u.id AS u") == [{"d": "ADR-2", "u": "src/a.py"}]
     g.close()
+
+
+def test_empty_strings_load_as_empty_not_null(tmp_path):
+    g = Graph(str(tmp_path / "g.lbug"))
+    s = Symbol("unresolved::x", "x", "x", "unresolved", "python", "", 0, 0, "")
+    g.load([], [s], [], [])
+    assert g.query("MATCH (s:Symbol) WHERE s.path = '' RETURN count(*) AS c") == [{"c": 1}]
+    assert g.query("MATCH (s:Symbol) WHERE s.path =~ '^.*$' RETURN count(*) AS c") == [{"c": 1}]
+    g.close()

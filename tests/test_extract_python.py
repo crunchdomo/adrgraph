@@ -126,3 +126,15 @@ def test_inherits_and_decorates_refs():
 def test_class_without_bases_has_no_inherits_edge():
     e = ex("src/views.py")
     assert not any(r.relation == "inherits" and r.src_id.endswith("src.views.Plain") for r in e.refs)
+
+
+def test_decorator_expressions_still_produce_calls():
+    e = extract("m.py", b'@app.route("/x", methods=helper())\ndef f():\n    pass\n', "m")
+    calls = {(r.src_id, r.name) for r in e.refs if r.relation == "calls"}
+    assert ("m.py", "app.route") in calls and ("m.py", "helper") in calls
+
+
+def test_inherits_skips_keywords_comments_splats_and_unwraps_subscripts():
+    src = b"import abc\nclass M(abc.ABC,  # a comment\n        metaclass=abc.ABCMeta, *extra, Generic[T]):\n    pass\n"
+    e = extract("m.py", src, "m")
+    assert sorted(r.name for r in e.refs if r.relation == "inherits") == ["Generic", "abc.ABC"]

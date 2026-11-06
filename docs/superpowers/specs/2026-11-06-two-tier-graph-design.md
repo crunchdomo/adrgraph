@@ -184,8 +184,9 @@ Symbol for every node a `scope` selector matches (rule-level `BINDS` stay as the
 
 ## Decided: findings that explain themselves
 
-- An `only`/`never` violation over `IMPORTS` reports the line of the offending import
-  (from the edge), not line 1 of the file. For other edge labels on a Unit, line stays 1.
+- An `only`/`never` violation reports the line of the offending edge (import, call, reference)
+  whenever the edge carries one, falling back to the node's own line. For a Unit that means the
+  import line instead of line 1.
 - A transitive violation's message is the path: `reaches src/db/q.py via src/contracts/c.py ->
   src/db/q.py` (node ids joined by ` -> `, the source excluded). Shortest path, as evaluated.
 - JSON output carries `path_nodes: [...]` for transitive findings.

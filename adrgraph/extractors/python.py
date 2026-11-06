@@ -100,8 +100,11 @@ def extract(rel_path: str, source: bytes, module_name: str) -> Extraction:
             sym = symbol(node, qualified, "class")
             bases = node.child_by_field_name("superclasses")
             for base in (bases.children if bases is not None else []):
-                if base.is_named:
-                    ex.refs.append(RawRef(sym.id, _dotted(base) or _text(base), lines.line(base.start_byte), "inherits"))
+                if not base.is_named or base.type in ("keyword_argument", "comment", "list_splat", "dictionary_splat"):
+                    continue  # metaclass=..., frozen=True, comments and *args are not bases
+                if base.type == "subscript":  # Generic[T] -> Generic
+                    base = base.child_by_field_name("value") or base
+                ex.refs.append(RawRef(sym.id, _dotted(base) or _text(base), lines.line(base.start_byte), "inherits"))
         else:
             sym = symbol(node, qualified, "method" if in_class else "function")
         ex.symbols.append(sym)
@@ -122,7 +125,10 @@ def extract(rel_path: str, source: bytes, module_name: str) -> Extraction:
                 definition = child.child_by_field_name("definition")
                 sym_id = define(definition, scope, owner, in_class) if definition is not None else None
                 for deco in child.children:
-                    if deco.type != "decorator" or sym_id is None:
+                    if deco.type != "decorator":
+                        continue
+                    walk(deco, scope, owner, in_class, in_function)  # calls inside the decorator expression
+                    if sym_id is None:
                         continue
                     expr = next((c for c in deco.children if c.is_named), None)
                     if expr is not None and expr.type == "call":
