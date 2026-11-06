@@ -15,7 +15,6 @@ _RETURN_EDGE = ("RETURN DISTINCT {a}.id AS node_id, {a}.path AS path, {a}.line A
 _RETURN_PATH = ("RETURN {a}.id AS node_id, {a}.path AS path, {a}.line AS line, "
                 "list_transform(rels(p), r -> r.line)[1] AS edge_line, "
                 "list_transform(nodes(p), x -> x.id) AS path_nodes, {msg} AS message")
-_REQUIRED = ("only", "never", "must", "cypher")
 _KEYS = {
     "only": {"from", "to", "via", "transitive", "except"},
     "never": {"from", "to", "via", "transitive", "except"},
@@ -38,15 +37,13 @@ class Violation:
     line: int
     message: str
     path_nodes: tuple[str, ...] = ()
+    severity: str = ""        # set by check: error | warn | baselined | fixed
 
 
 def matched_ids(graph: Graph, selector: dict, excepts: list[dict] = ()) -> list[str]:
     frag, params = compile_selector(selector, "n", "s")
-    for i, ex in enumerate(excepts):
-        xf, xp = compile_selector(ex, "n", f"x{i}")
-        frag += f" AND NOT ({xf})"
-        params.update(xp)
-    return sorted(r["id"] for r in graph.query(f"MATCH (n) WHERE {frag} RETURN n.id AS id", params))
+    xf, xp = _except_fragment(excepts, "n")
+    return sorted(r["id"] for r in graph.query(f"MATCH (n) WHERE {frag}{xf} RETURN n.id AS id", {**params, **xp}))
 
 
 def _excepts(rule: Rule) -> list[dict]:
@@ -59,10 +56,10 @@ def _excepts(rule: Rule) -> list[dict]:
     return ex
 
 
-def _except_fragment(rule: Rule, var: str) -> tuple[str, dict]:
-    """`AND NOT (...)` clauses excluding the rule's except selectors from the subject variable."""
+def _except_fragment(excepts: list[dict], var: str) -> tuple[str, dict]:
+    """`AND NOT (...)` clauses excluding the except selectors from the subject variable."""
     frag, params = "", {}
-    for i, ex in enumerate(_excepts(rule)):
+    for i, ex in enumerate(excepts):
         xf, xp = compile_selector(ex, var, f"x{i}")
         frag += f" AND NOT ({xf})"
         params.update(xp)
@@ -86,14 +83,18 @@ def bound_ids(graph: Graph, rule: Rule) -> list[str] | None:
         return matched_ids(graph, rule.spec[_SUBJECT[rule.shape]], _excepts(rule))
     rel, params = _relation(rule)
     t, pt = compile_selector(rule.spec["to"], "b", "t")
-    xf, xp = _except_fragment(rule, "a")
+    xf, xp = _except_fragment(_excepts(rule), "a")
     rows = graph.query(f"MATCH (a){rel}(b) WHERE ({t}){xf} RETURN DISTINCT a.id AS id", {**params, **pt, **xp})
     return sorted(r["id"] for r in rows)
 
 
-def _via(spec: dict, err) -> str:
-    via = spec["via"]
-    labels = [via] if isinstance(via, str) else via
+def via_labels(rule: Rule) -> list[str]:
+    via = rule.spec["via"]
+    return [via] if isinstance(via, str) else via
+
+
+def _via(rule: Rule, err) -> str:
+    labels = via_labels(rule)
     if not isinstance(labels, list) or not labels or not all(isinstance(x, str) for x in labels):
         raise err("via must be an edge label or a list of edge labels")
     for label in labels:
@@ -105,7 +106,7 @@ def _via(spec: dict, err) -> str:
 def _relation(rule: Rule) -> tuple[str, dict]:
     """The relationship pattern for an only/never rule (direct, or shortest paths when transitive)."""
     err = lambda msg: RuleError(f"{rule.decision}/{rule.id}: {msg}")
-    via = _via(rule.spec, err)
+    via = _via(rule, err)
     transitive = rule.spec.get("transitive", False)
     if not isinstance(transitive, bool):
         raise err("transitive must be true or false")
@@ -131,9 +132,9 @@ def compile_rule(rule: Rule) -> tuple[str, dict]:
     for key in _NEEDED[rule.shape]:
         if key not in spec:
             raise err(f"shape {rule.shape} needs '{key}'")
-    via = _via(spec, err)
+    via = _via(rule, err)
     try:
-        xf, xp = _except_fragment(rule, "e" if rule.shape == "must" else "a")
+        xf, xp = _except_fragment(_excepts(rule), "e" if rule.shape == "must" else "a")
         if rule.shape == "must":
             direction = spec.get("direction", "out")
             if direction not in ("out", "in"):

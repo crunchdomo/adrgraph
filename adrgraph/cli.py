@@ -15,13 +15,12 @@ from adrgraph import __version__
 from adrgraph.adr import AdrError, Decision, load_adrs
 from adrgraph.audit import run_audit
 from adrgraph.baseline import load_baseline, save_baseline
-from adrgraph.check import bind, bind_scopes, run_check
+from adrgraph.check import bind, bind_scopes, pct, run_check
 from adrgraph.render.html import render_html
-from adrgraph.render.json import trail_dict
 from adrgraph.render.text import render_text
 from adrgraph.rules import RuleError, compile_rule, portability
 from adrgraph.schema import load_adrs as load_adr_graph, open_graph
-from adrgraph.trail import build_trail
+from adrgraph.trail import build_trail, trail_dict
 from srcgraph.source import Source
 
 DB = ".adrgraph/graph.lbug"
@@ -43,9 +42,8 @@ def build(adr_dirs: list[str], src_roots: list[str], excludes: tuple[str, ...], 
     graph = open_graph(db_path)
     graph.load_code(result)
     load_adr_graph(graph, decisions)
-    binds = [(key, node) for key, nodes in bind(graph, decisions).items() for node in nodes]
-    binds += [(did, node) for did, nodes in bind_scopes(graph, decisions).items() for node in nodes]
-    graph.load_edges([Edge("BINDS", src, dst) for src, dst in binds])
+    binds = {**bind(graph, decisions), **bind_scopes(graph, decisions)}   # rule keys contain '/', decision ids do not
+    graph.load_edges([Edge("BINDS", src, dst) for src, nodes in binds.items() for dst in nodes])
     return graph, decisions, result.warnings
 
 
@@ -92,8 +90,6 @@ def _select_findings(findings, target: str, decision: str | None):
     """path:line [decision] or ADR-ID/rule-id."""
     if "/" in target and ":" not in target.rsplit("/", 1)[-1] and not target.endswith(".py"):
         did, _, rid = target.partition("/")
-        if not target.startswith("ADR") and ":" in target:
-            pass
         matched = [f for f in findings if f.decision == did and f.rule == rid]
         if matched:
             return matched
@@ -116,21 +112,17 @@ def _colour(text: str, out) -> str:
     return "\n".join(lines) + "\n"
 
 
-def _pct(v: float | None) -> str:
-    return "n/a" if v is None else f"{v * 100:.1f}%"
-
-
 def _print_check(result, out) -> None:
     for f in result.findings:
         print(f"{f.severity:<9} {f.path}:{f.line}  {f.decision}/{f.rule}  {f.message}", file=out)
     if result.findings:
         print(file=out)
     m = result.metrics
-    print(f"overall compliance: {_pct(m.overall)}", file=out)
+    print(f"overall compliance: {pct(m.overall)}", file=out)
     for adr, value in m.per_adr.items():
         rules = [k for k in m.per_rule if k.startswith(adr + "/")]
         violations = sum(m.per_rule[k].violations for k in rules)
-        print(f"{adr}: {_pct(value)} ({len(rules)} rules, {violations} violation{'s' if violations != 1 else ''})", file=out)
+        print(f"{adr}: {pct(value)} ({len(rules)} rules, {violations} violation{'s' if violations != 1 else ''})", file=out)
     print(f"baseline: {m.fixed} fixed, {m.new} new", file=out)
 
 
@@ -216,12 +208,10 @@ def _run(args, out, err) -> int:
             result = run_check(graph, decisions, load_baseline(args.baseline))
             source = Source(".")
             trails = [build_trail(graph, decisions, f, result.findings, args.baseline, source.lines) for f in result.findings]
-            binds = {}
-            for key, nodes in bind(graph, decisions).items():
-                binds.setdefault(key.split("/", 1)[0], []).extend(nodes)
-            for did, nodes in bind_scopes(graph, decisions).items():
-                binds.setdefault(did, []).extend(nodes)
-            binds = {k: sorted(set(v)) for k, v in binds.items()}
+            binds: dict[str, set[str]] = {}
+            for key, nodes in {**bind(graph, decisions), **bind_scopes(graph, decisions)}.items():
+                binds.setdefault(key.split("/", 1)[0], set()).update(nodes)
+            binds = {k: sorted(v) for k, v in binds.items()}
             os.makedirs(os.path.dirname(os.path.abspath(args.output)), exist_ok=True)
             with open(args.output, "w", encoding="utf-8") as fh:
                 fh.write(render_html(trails, decisions, result.metrics, binds))

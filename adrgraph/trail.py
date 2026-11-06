@@ -4,13 +4,12 @@ Everything a trail shows is already in the graph, the decisions, the check resul
 files; `build_trail` only reads. Renderers (text, html, json) consume the Trail."""
 import re
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
 
 from srcgraph.graph import Graph
 
 from adrgraph.adr import Decision, Rule
-from adrgraph.check import Finding
-from adrgraph.rules import portability
+from adrgraph.rules import Violation, portability, via_labels
 
 EXCERPT_CONTEXT = 3
 WHY = {
@@ -35,31 +34,24 @@ class Step:
     kind: str             # decision | rule | node | edge | path | syntax | context
     title: str
     detail: dict
-    node_id: str | None
     excerpt: Excerpt | None
 
 
 @dataclass(frozen=True)
 class Trail:
-    finding: Finding
+    finding: Violation
     steps: tuple[Step, ...]
+
+
+def trail_dict(trail: Trail) -> dict:
+    """Plain dict, for `check --trails` and `explain --format json`."""
+    return {"finding": asdict(trail.finding), "steps": [asdict(s) for s in trail.steps]}
 
 
 def decision_text(markdown: str) -> str | None:
     """The first paragraph under a `## Decision` heading, or None."""
-    lines = markdown.splitlines()
-    for i, line in enumerate(lines):
-        if re.match(r"^##\s+Decision\s*$", line):
-            para = []
-            for l in lines[i + 1:]:
-                if l.strip() == "" and para:
-                    break
-                if l.startswith("#"):
-                    break
-                if l.strip():
-                    para.append(l.strip())
-            return " ".join(para) or None
-    return None
+    m = re.search(r"^##[ \t]+Decision[ \t]*$\n+(.+?)(?:\n[ \t]*\n|\n#|\Z)", markdown, re.M | re.S)
+    return " ".join(m[1].split()) or None if m else None
 
 
 def excerpt(read_source: Callable[[str], list[str] | None], path: str, line: int) -> Excerpt | None:
@@ -71,12 +63,7 @@ def excerpt(read_source: Callable[[str], list[str] | None], path: str, line: int
     return Excerpt(path, start, lines[start - 1:end], min(line, len(lines)))
 
 
-def _via_labels(rule: Rule) -> list[str]:
-    via = rule.spec["via"]
-    return [via] if isinstance(via, str) else list(via)
-
-
-def build_trail(graph: Graph, decisions: list[Decision], finding: Finding, findings: list[Finding],
+def build_trail(graph: Graph, decisions: list[Decision], finding: Violation, findings: list[Violation],
                 baseline_path: str | None, read_source: Callable[[str], list[str] | None]) -> Trail:
     decision = next(d for d in decisions if d.id == finding.decision)
     rule = next(r for r in decision.rules if r.id == finding.rule)
@@ -84,10 +71,10 @@ def build_trail(graph: Graph, decisions: list[Decision], finding: Finding, findi
     steps = [
         Step("decision", f"{decision.id}  {decision.title}",
              {"id": decision.id, "title": decision.title, "status": decision.status, "path": decision.path,
-              "decision_text": decision_text("\n".join(adr_lines)) if adr_lines else None}, None, None),
+              "decision_text": decision_text("\n".join(adr_lines)) if adr_lines else None}, None),
         Step("rule", f"rule {rule.id}",
              {"id": rule.id, "shape": rule.shape, "spec": rule.spec, "severity": rule.severity,
-              "portability": portability(rule), "fixed": finding.severity == "fixed"}, None, None),
+              "portability": portability(rule), "fixed": finding.severity == "fixed"}, None),
     ]
     if finding.severity != "fixed":
         steps += _node_steps(graph, rule, finding, read_source)
@@ -95,32 +82,31 @@ def build_trail(graph: Graph, decisions: list[Decision], finding: Finding, findi
     return Trail(finding, tuple(steps))
 
 
-def _node_steps(graph: Graph, rule: Rule, finding: Finding, read_source) -> list[Step]:
+def _node_steps(graph: Graph, rule: Rule, finding: Violation, read_source) -> list[Step]:
     rows = graph.query("MATCH (n) WHERE n.id = $id RETURN label(n) AS label, n.kind AS kind, n.path AS path, n.line AS line",
                        {"id": finding.node_id})
     node = rows[0] if rows else {"label": "?", "kind": "?", "path": finding.path, "line": finding.line}
     steps = [Step("node", f"violates  {finding.path}:{finding.line}",
                   {"id": finding.node_id, "label": node["label"], "kind": node["kind"], "path": node["path"],
                    "line": finding.line, "why": WHY[rule.shape]},
-                  finding.node_id, excerpt(read_source, finding.path, finding.line))]
+                  excerpt(read_source, finding.path, finding.line))]
     if rule.shape == "cypher":
         return steps
-    labels = "|".join(_via_labels(rule))
+    labels = "|".join(via_labels(rule))
     if finding.path_nodes:
         ids = list(finding.path_nodes)
         info = {r["id"]: r for r in graph.query(
             "MATCH (n) WHERE n.id IN $ids RETURN n.id AS id, label(n) AS label, n.path AS path", {"ids": ids})}
         steps.append(Step("path", "path", {"nodes": [{"id": i, "label": info.get(i, {}).get("label", "?"),
-                                                      "path": info.get(i, {}).get("path", "")} for i in ids]}, None, None))
+                                                      "path": info.get(i, {}).get("path", "")} for i in ids]}, None))
     elif rule.shape == "must":
+        arrow = f"-[r:{labels}]->" if rule.spec.get("direction", "out") == "out" else f"<-[r:{labels}]-"
         existing = graph.query(
-            f"MATCH (a)-[r:{labels}]->(b) WHERE a.id = $id RETURN b.id AS target_id, label(b) AS target_kind, r.line AS line LIMIT 10",
-            {"id": finding.node_id}) if rule.spec.get("direction", "out") == "out" else graph.query(
-            f"MATCH (a)<-[r:{labels}]-(b) WHERE a.id = $id RETURN b.id AS target_id, label(b) AS target_kind, r.line AS line LIMIT 10",
+            f"MATCH (a){arrow}(b) WHERE a.id = $id RETURN b.id AS target_id, label(b) AS target_kind, r.line AS line LIMIT 10",
             {"id": finding.node_id})
         steps.append(Step("edge", f"missing  {labels}", {"label": labels, "line": finding.line, "target_id": None,
                                                         "target_kind": None, "missing": True,
-                                                        "existing": [dict(e) for e in existing]}, None, None))
+                                                        "existing": [dict(e) for e in existing]}, None))
     else:
         target = finding.message.split("reaches ", 1)[-1].split(" via ")[0]
         rows = graph.query(f"MATCH (a)-[r:{labels}]->(b) WHERE a.id = $id AND b.id = $t RETURN label(b) AS k, r.line AS line, b.kind AS bk",
@@ -128,7 +114,7 @@ def _node_steps(graph: Graph, rule: Rule, finding: Finding, read_source) -> list
         kind = (rows[0]["bk"] if rows and rows[0]["k"] == "Unit" else (rows[0]["k"] if rows else "?"))
         steps.append(Step("edge", f"{labels} → {target}", {"label": labels, "line": rows[0]["line"] if rows else finding.line,
                                                            "target_id": target, "target_kind": kind, "missing": False,
-                                                           "existing": []}, target, None))
+                                                           "existing": []}, None))
     derived = graph.query("MATCH (n)-[:DERIVED_FROM]->(a:Ast) WHERE n.id = $id RETURN a.id AS id, a.kind AS kind, a.norm AS norm, a.line AS line, a.end_line AS end_line",
                           {"id": finding.node_id})
     if derived:
@@ -146,11 +132,11 @@ def _node_steps(graph: Graph, rule: Rule, finding: Finding, read_source) -> list
                     {"id": finding.node_id, "line": steps[-1].detail["line"], "norm": norm})
                 if on_line:
                     detail["edge_syntax"] = dict(on_line[0])
-        steps.append(Step("syntax", f"derived from  Ast {detail['kind']}", detail, detail["id"], None))
+        steps.append(Step("syntax", f"derived from  Ast {detail['kind']}", detail, None))
     return steps
 
 
-def _context_step(graph: Graph, finding: Finding, findings: list[Finding], baseline_path: str | None) -> Step:
+def _context_step(graph: Graph, finding: Violation, findings: list[Violation], baseline_path: str | None) -> Step:
     governed = set()
     if finding.node_id and finding.severity != "fixed":
         # Only decisions that check evaluates (accepted, and proposed as warnings) can pass or fail.
@@ -165,4 +151,4 @@ def _context_step(graph: Graph, finding: Finding, findings: list[Finding], basel
     return Step("context", "context",
                 {"governed_by": [{"decision": d, "result": "fails" if d in failing else "passes"} for d in sorted(governed)],
                  "baselined": finding.severity == "baselined",
-                 "baseline_path": baseline_path if finding.severity == "baselined" else None}, None, None)
+                 "baseline_path": baseline_path if finding.severity == "baselined" else None}, None)

@@ -2,7 +2,7 @@
 import html as h
 
 from adrgraph.adr import Decision
-from adrgraph.check import Metrics
+from adrgraph.check import Metrics, pct
 from adrgraph.rules import portability
 from adrgraph.trail import Trail
 
@@ -18,10 +18,6 @@ ol.trail{margin:0;padding-left:20px}ol.trail li{margin:6px 0}ol.trail h4{margin:
 pre{background:#f6f6f6;padding:8px;border-radius:4px;overflow:auto;font-size:12px}mark{background:#fde2e2}
 section.adr{margin:12px 0}section.adr ul{columns:2;font-size:12px}code{font-size:12px}
 """
-
-
-def _pct(v):
-    return "n/a" if v is None else f"{v * 100:.1f}%"
 
 
 def _step_html(step) -> str:
@@ -73,7 +69,7 @@ def render_html(trails: list[Trail], decisions: list[Decision], metrics: Metrics
         c = counts.get(d.id, {})
         summary = ", ".join(f"{n} {sev}" for sev, n in sorted(c.items())) or "none"
         out.append(f"<tr><td>{h.escape(d.id)}</td><td>{h.escape(d.title)}</td><td>{h.escape(d.status)}</td>"
-                   f"<td>{_pct(metrics.per_adr.get(d.id))}</td><td>{h.escape(summary)}</td></tr>")
+                   f"<td>{pct(metrics.per_adr.get(d.id))}</td><td>{h.escape(summary)}</td></tr>")
     out.append("</table>")
     out.append(f"<h2>Findings ({len(trails)})</h2>")
     if not trails:

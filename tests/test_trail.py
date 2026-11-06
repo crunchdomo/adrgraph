@@ -2,10 +2,10 @@ import json
 import pytest
 from srcgraph.model import Edge
 from adrgraph.adr import Decision, Rule
-from adrgraph.check import Finding, bind, bind_scopes, run_check
+from adrgraph.check import bind, bind_scopes, run_check
 from adrgraph.schema import load_adrs
-from adrgraph.trail import build_trail, decision_text
-from adrgraph.render.json import trail_dict
+from adrgraph.rules import Violation
+from adrgraph.trail import build_trail, decision_text, trail_dict
 
 ONLY = Rule("gw", "ADR-1", "only", {"from": {"path": "src/contracts/**"}, "to": {"path": "src/gateway/client.py"}, "via": "IMPORTS"}, "error", "")
 NEVER_T = Rule("db", "ADR-1", "never", {"from": {"path": "src/handlers/**"}, "to": {"path": "src/db/**"}, "via": "CALLS", "transitive": True}, "warn", "")
@@ -111,7 +111,7 @@ def test_context_lists_other_decisions_and_baseline(layered, source_tree):
 def test_fixed_finding_trail(layered, source_tree):
     d = dec("ADR-1", [ONLY], source_tree / "ADR-1.md")
     g = graph_with(layered, [d])
-    f = Finding("fixed", "ADR-1", "gw", "gone.py", "", 0, "no longer violated")
+    f = Violation("ADR-1", "gw", "gone.py", "", 0, "no longer violated", severity="fixed")
     t = build_trail(g, [d], f, [f], None, reader(source_tree))
     assert [s.kind for s in t.steps] == ["decision", "rule", "context"] and t.steps[1].detail["fixed"] is True
 

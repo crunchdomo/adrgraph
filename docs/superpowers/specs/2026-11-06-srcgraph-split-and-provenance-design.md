@@ -168,7 +168,6 @@ class Step:
     kind: str             # "decision" | "rule" | "node" | "edge" | "path" | "syntax" | "context"
     title: str            # one line, e.g. "ADR-0004  Use PySide6 for menus and insights"
     detail: dict          # kind-specific facts, all JSON-serialisable
-    node_id: str | None   # graph node this step is about, when there is one
     excerpt: Excerpt | None
 
 @dataclass(frozen=True)
@@ -220,7 +219,7 @@ shows every finding `check` prints, at every severity, so its count always match
   self-contained page (inline CSS, no scripts): a summary table (per-ADR compliance, counts by
   severity), the findings as vertical trails in the mockup's style, then one section per ADR
   with its status, rules, portability, and the files and symbols it binds to.
-- `render/json.py`: `trail_dict(trail: Trail) -> dict`, plain `dataclasses.asdict` plus
+- `trail.py`: `trail_dict(trail: Trail) -> dict`, plain `dataclasses.asdict` plus
   `finding` flattened. Used by `check --format json --trails` and by the explorer overlay.
 
 ## Decided: the CLI additions

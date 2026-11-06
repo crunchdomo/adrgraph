@@ -5,7 +5,7 @@ from dataclasses import dataclass
 from srcgraph.graph import Graph
 
 from adrgraph.adr import Decision, Rule
-from adrgraph.rules import evaluate, matched_ids
+from adrgraph.rules import evaluate, matched_ids, via_labels
 
 # Selectors whose emptiness means the rule is mis-scoped. A `never` rule's `to` is left out: when the
 # forbidden target is absent from the graph the rule is simply obeyed.
@@ -19,11 +19,6 @@ class AuditFinding:
     decision: str
     rule: str
     message: str
-
-
-def _via(rule: Rule) -> set[str]:
-    via = rule.spec["via"]
-    return {via} if isinstance(via, str) else set(via)
 
 
 def run_audit(graph: Graph, decisions: list[Decision], today: datetime.date, strict: bool = False) -> list[AuditFinding]:
@@ -86,7 +81,7 @@ def run_audit(graph: Graph, decisions: list[Decision], today: datetime.date, str
         every, has = set(bound(d, m, "every")), set(bound(d, m, "has"))
         inbound = m.spec.get("direction", "out") == "in"
         for d2, other in accepted:
-            if other.shape not in ("never", "only") or not (_via(m) & _via(other)):
+            if other.shape not in ("never", "only") or not (set(via_labels(m)) & set(via_labels(other))):
                 continue
             frm, to = set(bound(d2, other, "from")), set(bound(d2, other, "to"))
             for e in sorted(every):

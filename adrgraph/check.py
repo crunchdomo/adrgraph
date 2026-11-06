@@ -1,26 +1,12 @@
 """Evaluate every active rule, apply severity and baseline, compute metrics."""
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 
 from srcgraph.graph import Graph
 
 from adrgraph.adr import Decision
 from adrgraph.baseline import Key
 from adrgraph.schema import rule_key
-from adrgraph.rules import bound_ids, evaluate, matched_ids
-
-SEVERITIES = ("error", "warn", "baselined", "fixed")
-
-
-@dataclass(frozen=True)
-class Finding:
-    severity: str
-    decision: str
-    rule: str
-    node_id: str
-    path: str
-    line: int
-    message: str
-    path_nodes: tuple[str, ...] = ()
+from adrgraph.rules import Violation, bound_ids, evaluate, matched_ids
 
 
 @dataclass
@@ -40,7 +26,7 @@ class Metrics:
 
 @dataclass
 class CheckResult:
-    findings: list[Finding]
+    findings: list[Violation]
     metrics: Metrics
     failed: bool
     current: set[Key]
@@ -55,6 +41,10 @@ def bind_scopes(graph: Graph, decisions: list[Decision]) -> dict[str, list[str]]
     return {d.id: sorted({n for sel in d.scope for n in matched_ids(graph, sel)}) for d in decisions if d.scope}
 
 
+def pct(v: float | None) -> str:
+    return "n/a" if v is None else f"{v * 100:.1f}%"
+
+
 def _compliance(rules: list[RuleMetrics]) -> float | None:
     bound = sum(m.bound for m in rules if m.bound)
     if not bound:
@@ -63,7 +53,7 @@ def _compliance(rules: list[RuleMetrics]) -> float | None:
 
 
 def run_check(graph: Graph, decisions: list[Decision], baseline: set[Key]) -> CheckResult:
-    findings: list[Finding] = []
+    findings: list[Violation] = []
     metrics = Metrics()
     current: set[Key] = set()
     bound = bind(graph, decisions)
@@ -78,13 +68,13 @@ def run_check(graph: Graph, decisions: list[Decision], baseline: set[Key]) -> Ch
             for v in violations:
                 k = (d.id, r.id, v.node_id)
                 current.add(k)
-                findings.append(Finding("baselined" if k in baseline else severity, d.id, r.id, v.node_id, v.path, v.line, v.message, v.path_nodes))
+                findings.append(replace(v, severity="baselined" if k in baseline else severity))
             rm = RuleMetrics(len(bound[key]) if r.shape != "cypher" else None, len(violations))
             metrics.per_rule[key] = rm
             adr_rules.append(rm)
         metrics.per_adr[d.id] = _compliance(adr_rules)
     for d, r, n in sorted(baseline - current):
-        findings.append(Finding("fixed", d, r, n, "", 0, "no longer violated"))
+        findings.append(Violation(d, r, n, "", 0, "no longer violated", severity="fixed"))
     metrics.overall = _compliance(list(metrics.per_rule.values()))
     metrics.fixed = sum(f.severity == "fixed" for f in findings)
     metrics.new = sum(f.severity in ("error", "warn") for f in findings)
