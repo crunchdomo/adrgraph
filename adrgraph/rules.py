@@ -1,10 +1,11 @@
 """Compile rule shapes (only / never / must) to Cypher and evaluate them. Raw cypher rules pass through."""
 from dataclasses import dataclass
 
+from srcgraph.graph import Graph
+from srcgraph.model import EDGE_LABELS
+from srcgraph.selectors import SelectorError, compile_selector
+
 from adrgraph.adr import Rule
-from adrgraph.graph import Graph
-from adrgraph.model import EDGE_LABELS
-from adrgraph.selectors import SelectorError, compile_selector
 
 MAX_HOPS = 10
 _RETURN = "RETURN DISTINCT {a}.id AS node_id, {a}.path AS path, {a}.line AS line, {msg} AS message"

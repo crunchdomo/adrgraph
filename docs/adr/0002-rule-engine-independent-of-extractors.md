@@ -10,21 +10,21 @@ rules:
     description: rules.py must not reach the extractors package, even transitively.
     never:
       from: { path: "adrgraph/rules.py" }
-      to: { path: "adrgraph/extractors/**" }
+      to: { name: "srcgraph.extractors*" }
       via: IMPORTS
       transitive: true
   - id: check-never-imports-extractors
     description: check.py must not reach the extractors package, even transitively.
     never:
       from: { path: "adrgraph/check.py" }
-      to: { path: "adrgraph/extractors/**" }
+      to: { name: "srcgraph.extractors*" }
       via: IMPORTS
       transitive: true
   - id: audit-never-imports-extractors
     description: audit.py must not reach the extractors package, even transitively.
     never:
       from: { path: "adrgraph/audit.py" }
-      to: { path: "adrgraph/extractors/**" }
+      to: { name: "srcgraph.extractors*" }
       via: IMPORTS
       transitive: true
 ---
@@ -32,7 +32,7 @@ rules:
 ## Context
 
 Rules are evaluated against the graph, not against source. If the engine
-imported an extractor it would be tempted to special-case a language.
+imported an extractor (now in srcgraph) it would be tempted to special-case a language.
 
 ## Decision
 

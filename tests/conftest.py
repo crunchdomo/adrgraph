@@ -1,6 +1,6 @@
 import pytest
-from adrgraph.graph import Graph
-from adrgraph.model import Unit, Symbol, Edge
+from srcgraph.graph import Graph
+from srcgraph.model import Unit, Symbol, Edge
 
 
 def U(path, name):
@@ -25,6 +25,8 @@ def layered(tmp_path):
              Edge("IMPORTS", "src/other/x.py", "src/gateway/client.py", line=1),
              Edge("CALLS", view.id, call.id, line=5), Edge("CALLS", call.id, run.id, line=3),
              Edge("CALLS", run.id, view.id, line=2), Edge("CALLS", view.id, info.id, line=6)]
-    g.load(units, [view, run, info, call], [], edges)
+    g.load_nodes("Unit", [{**vars(u), "line": 1} for u in units])
+    g.load_nodes("Symbol", [vars(s) for s in (view, run, info, call)])
+    g.load_edges(edges)
     yield g
     g.close()

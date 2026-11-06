@@ -70,3 +70,11 @@ def test_empty_scope_and_self_reference(layered):
     assert checks(fs) == [("dependency", "ADR-1", ""), ("empty_scope", "ADR-1", "")]
     assert "names itself" in next(f for f in fs if f.check == "dependency").message
     assert "nowhere" in next(f for f in fs if f.check == "empty_scope").message
+
+
+def test_never_with_absent_target_is_not_orphan(layered):
+    # "never import X" is obeyed precisely when X is absent from the graph; only `from` can be orphaned.
+    obeyed = never("n", {"path": "src/handlers/**"}, {"name": "tree_sitter*"})
+    assert checks(run_audit(layered, [dec("ADR-1", "accepted", [obeyed])], TODAY)) == []
+    no_subject = never("m", {"path": "nowhere/**"}, {"name": "tree_sitter*"})
+    assert checks(run_audit(layered, [dec("ADR-1", "accepted", [no_subject])], TODAY)) == [("orphan", "ADR-1", "m")]

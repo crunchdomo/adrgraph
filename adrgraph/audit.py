@@ -2,11 +2,14 @@
 import datetime
 from dataclasses import dataclass
 
+from srcgraph.graph import Graph
+
 from adrgraph.adr import Decision, Rule
-from adrgraph.graph import Graph
 from adrgraph.rules import evaluate, matched_ids
 
-_SELECTOR_KEYS = {"only": ("from", "to"), "never": ("from", "to"), "must": ("every", "has")}
+# Selectors whose emptiness means the rule is mis-scoped. A `never` rule's `to` is left out: when the
+# forbidden target is absent from the graph the rule is simply obeyed.
+_SELECTOR_KEYS = {"only": ("from", "to"), "never": ("from",), "must": ("every", "has")}
 
 
 @dataclass(frozen=True)

@@ -5,15 +5,18 @@ import json
 import sys
 from dataclasses import asdict
 
+from srcgraph.graph import Graph
+from srcgraph.model import Edge
+from srcgraph.scan import DEFAULT_EXCLUDES, scan
+from srcgraph.selectors import SelectorError, compile_selector
+
 from adrgraph import __version__
 from adrgraph.adr import AdrError, Decision, load_adrs
 from adrgraph.audit import run_audit
 from adrgraph.baseline import load_baseline, save_baseline
 from adrgraph.check import bind, bind_scopes, run_check
-from adrgraph.graph import Graph
 from adrgraph.rules import RuleError, compile_rule, portability
-from adrgraph.scan import DEFAULT_EXCLUDES, scan
-from adrgraph.selectors import SelectorError, compile_selector
+from adrgraph.schema import load_adrs as load_adr_graph, open_graph
 
 DB = ".adrgraph/graph.lbug"
 BASELINE = ".adrgraph/baseline.json"
@@ -31,11 +34,12 @@ def build(adr_dirs: list[str], src_roots: list[str], excludes: tuple[str, ...], 
             except SelectorError as exc:
                 raise AdrError(f"{d.path}: {d.id} scope: {exc}") from exc
     result = scan(src_roots, excludes)
-    graph = Graph(db_path)
-    graph.load(result.units, result.symbols, decisions, result.edges, ast=result.ast, ast_edges=result.ast_edges)
+    graph = open_graph(db_path)
+    graph.load_code(result)
+    load_adr_graph(graph, decisions)
     binds = [(key, node) for key, nodes in bind(graph, decisions).items() for node in nodes]
     binds += [(did, node) for did, nodes in bind_scopes(graph, decisions).items() for node in nodes]
-    graph.load([], [], [], [], binds=binds)
+    graph.load_edges([Edge("BINDS", src, dst) for src, dst in binds])
     return graph, decisions, result.warnings
 
 

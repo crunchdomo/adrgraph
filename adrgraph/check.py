@@ -1,9 +1,11 @@
 """Evaluate every active rule, apply severity and baseline, compute metrics."""
 from dataclasses import dataclass, field
 
+from srcgraph.graph import Graph
+
 from adrgraph.adr import Decision
 from adrgraph.baseline import Key
-from adrgraph.graph import Graph, rule_key
+from adrgraph.schema import rule_key
 from adrgraph.rules import bound_ids, evaluate, matched_ids
 
 SEVERITIES = ("error", "warn", "baselined", "fixed")
