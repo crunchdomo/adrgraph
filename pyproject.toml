@@ -31,3 +31,4 @@ version = { attr = "adrgraph.__version__" }
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+pythonpath = ["."]
