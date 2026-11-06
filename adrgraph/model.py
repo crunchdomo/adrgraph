@@ -74,13 +74,17 @@ class RawImport:
     alias: str | None = None
 
 
+REF_RELATIONS = {"calls": "CALLS", "references": "REFERENCES", "inherits": "INHERITS", "decorates": "DECORATES"}
+
+
 @dataclass(frozen=True)
 class RawRef:
-    """A dotted name referenced from `src_id` (a Symbol id, or the Unit id at module scope)."""
+    """A dotted name referenced from `src_id` (a Symbol id, or the Unit id at module scope).
+    `relation` is a REF_RELATIONS key; the scanner resolves the name and emits the matching edge."""
     src_id: str
     name: str
     line: int
-    call: bool
+    relation: str
 
 
 @dataclass

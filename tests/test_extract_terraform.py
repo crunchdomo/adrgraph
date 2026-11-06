@@ -15,7 +15,7 @@ def test_symbols_and_refs():
     assert refs == {("aws_s3_bucket.logs", "var.name"), ("aws_s3_bucket.logs", "local.suffix"),
                     ("aws_s3_bucket_policy.p", "aws_s3_bucket.logs"),
                     ("aws_s3_bucket_policy.p", "data.aws_iam_policy_document.doc"), ("output.vpc", "module.net")}
-    assert all(not r.call for r in e.refs)
+    assert all(r.relation == "references" for r in e.refs)
     logs = next(s for s in e.symbols if s.name == "aws_s3_bucket.logs")
     assert logs.line == 5 and logs.id == "main.tf::aws_s3_bucket.logs"
 

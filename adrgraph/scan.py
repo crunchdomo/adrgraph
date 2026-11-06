@@ -6,7 +6,7 @@ import sys
 from dataclasses import dataclass, field
 
 from adrgraph.extractors import EXTRACTORS
-from adrgraph.model import Edge, Extraction, RawImport, Symbol, Unit, unresolved_id
+from adrgraph.model import REF_RELATIONS, Edge, Extraction, RawImport, Symbol, Unit, unresolved_id
 from adrgraph.selectors import glob_to_regex
 
 DEFAULT_EXCLUDES = (".git", ".venv", "venv", "node_modules", ".terraform", ".adrgraph", "__pycache__")
@@ -135,14 +135,14 @@ def scan(roots: list[str], excludes: tuple[str, ...] = DEFAULT_EXCLUDES) -> Scan
                     if target is None:
                         target = external(module or dotted, importer.lang)
                         _hint(res, index, module or dotted)
-                    res.edges.append(Edge("IMPORTS", imp.unit_id, target))
+                    res.edges.append(Edge("IMPORTS", imp.unit_id, target, line=imp.line))
                     amap[alias] = dotted
             else:
                 target = unit_for(module)
                 if target is None:
                     target = external(module, importer.lang)
                     _hint(res, index, module)
-                res.edges.append(Edge("IMPORTS", imp.unit_id, target))
+                res.edges.append(Edge("IMPORTS", imp.unit_id, target, line=imp.line))
                 amap[imp.alias or module.split(".")[0]] = module if imp.alias else module.split(".")[0]
 
     # package -> child CONTAINS by name prefix
@@ -164,7 +164,7 @@ def scan(roots: list[str], excludes: tuple[str, ...] = DEFAULT_EXCLUDES) -> Scan
             else:
                 qualified = ref.name
             target = by_qualified.get((lang, scope(lang, src_unit.path), qualified)) or unresolved(qualified, lang)
-            res.edges.append(Edge("CALLS" if ref.call else "REFERENCES", ref.src_id, target))
+            res.edges.append(Edge(REF_RELATIONS[ref.relation], ref.src_id, target, line=ref.line))
 
     res.units = list(units.values())
     res.symbols = list(symbols.values())

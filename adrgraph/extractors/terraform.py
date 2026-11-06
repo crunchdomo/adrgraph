@@ -72,7 +72,7 @@ def extract(rel_path: str, source: bytes, module_name: str) -> Extraction:
         ex.symbols.append(sym)
         ex.edges.append(Edge("CONTAINS", rel_path, sym.id))
         for ref in sorted(_references(node)):
-            ex.refs.append(RawRef(sym.id, ref, lines.line(node.start_byte), False))
+            ex.refs.append(RawRef(sym.id, ref, lines.line(node.start_byte), "references"))
 
     for block in body.children:
         if block.type != "block":

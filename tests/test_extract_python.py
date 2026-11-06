@@ -51,7 +51,7 @@ def test_multi_name_import():
 
 def test_non_call_attribute_reference():
     e = extract("m.py", b"from src.gateway import client\nsession = client.session\n\nclass K:\n    def m(self):\n        return self.x.y\n", "m")
-    assert [(r.src_id, r.name, r.call) for r in e.refs] == [("m.py", "client.session", False)]
+    assert [(r.src_id, r.name, r.relation) for r in e.refs] == [("m.py", "client.session", "references")]
 
 
 def test_attribute_chains_do_not_corrupt_memory(tmp_path):
@@ -68,8 +68,8 @@ def test_attribute_chains_do_not_corrupt_memory(tmp_path):
     # Keep only the refs: an Extraction kept alive until exit masks the crash.
     code = ("from adrgraph.extractors.python import extract\n"
             f"refs = extract('t.py', open({str(src)!r}, 'rb').read(), 't').refs\n"
-            "assert any(r.name == 'os.environ.get' and r.call for r in refs)\n"
-            "assert any(r.name == 'sys.argv.count.__doc__' and not r.call for r in refs)\n")
+            "assert any(r.name == 'os.environ.get' and r.relation == 'calls' for r in refs)\n"
+            "assert any(r.name == 'sys.argv.count.__doc__' and r.relation == 'references' for r in refs)\n")
     proc = subprocess.run([sys.executable, "-c", code], stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, text=True,
                           cwd=str(tmp_path), env={**os.environ, "PYTHONPATH": str(Path(__file__).resolve().parents[1])})
     assert proc.returncode == 0, f"exit {proc.returncode}: {proc.stderr[-500:]}"

@@ -101,7 +101,7 @@ def extract(rel_path: str, source: bytes, module_name: str) -> Extraction:
             elif t == "call":
                 name = _dotted(child.child_by_field_name("function"))
                 if name:
-                    ex.refs.append(RawRef(owner, name, lines.line(child.start_byte), True))
+                    ex.refs.append(RawRef(owner, name, lines.line(child.start_byte), "calls"))
                     args = child.child_by_field_name("arguments")
                     if args is not None:
                         walk(args, scope, owner, in_class, in_function)
@@ -110,7 +110,7 @@ def extract(rel_path: str, source: bytes, module_name: str) -> Extraction:
             elif t == "attribute":
                 name = _dotted(child)
                 if name and name.split(".", 1)[0] not in ("self", "cls"):
-                    ex.refs.append(RawRef(owner, name, lines.line(child.start_byte), False))
+                    ex.refs.append(RawRef(owner, name, lines.line(child.start_byte), "references"))
                 elif not name:
                     walk(child, scope, owner, in_class, in_function)
             else:

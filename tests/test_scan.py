@@ -98,3 +98,10 @@ def test_no_src_layout_hint_for_stdlib_shadowing(tmp_path, monkeypatch):
     (tmp_path / "src" / "a.py").write_text("import time\n")
     monkeypatch.chdir(tmp_path)
     assert scan(["."]).warnings == []
+
+
+def test_import_and_call_edges_carry_lines(repo):
+    lines = {(d.label, d.src, d.dst): d.line for d in repo.edges}
+    assert lines[("IMPORTS", "src/handlers/h.py", "logging")] == 1
+    assert lines[("IMPORTS", "src/handlers/h.py", "src/db/q.py")] == 3
+    assert lines[("CALLS", "src/handlers/h.py::src.handlers.h.leak", "src/db/q.py::src.db.q.run")] == 10
