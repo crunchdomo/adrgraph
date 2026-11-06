@@ -90,3 +90,11 @@ def test_unresolved_uses_alias_resolved_name(tmp_path, monkeypatch):
     (tmp_path / "m.py").write_text("import requests as r\nr.get()\n")
     monkeypatch.chdir(tmp_path)
     assert ("CALLS", "m.py", "unresolved::requests.get") in {(d.label, d.src, d.dst) for d in scan(["."]).edges}
+
+
+def test_no_src_layout_hint_for_stdlib_shadowing(tmp_path, monkeypatch):
+    (tmp_path / "src" / "lib").mkdir(parents=True)
+    (tmp_path / "src" / "lib" / "time.py").write_text("")
+    (tmp_path / "src" / "a.py").write_text("import time\n")
+    monkeypatch.chdir(tmp_path)
+    assert scan(["."]).warnings == []

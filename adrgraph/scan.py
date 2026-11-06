@@ -2,6 +2,7 @@
 import os
 import posixpath
 import re
+import sys
 from dataclasses import dataclass, field
 
 from adrgraph.extractors import EXTRACTORS
@@ -66,6 +67,8 @@ def _absolute(imp: RawImport, importer: Unit) -> str:
 
 def _hint(res: ScanResult, index: dict[str, list[str]], name: str) -> None:
     """Warn when an import went external but a scanned module has that name under a deeper prefix (src layout)."""
+    if name.split(".")[0] in sys.stdlib_module_names:
+        return  # a scanned module shadowing a stdlib name is not a misconfigured root
     for key in index:
         if key.endswith("." + name):
             root = key[: -len(name) - 1].replace(".", "/")

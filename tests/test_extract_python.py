@@ -52,3 +52,24 @@ def test_multi_name_import():
 def test_non_call_attribute_reference():
     e = extract("m.py", b"from src.gateway import client\nsession = client.session\n\nclass K:\n    def m(self):\n        return self.x.y\n", "m")
     assert [(r.src_id, r.name, r.call) for r in e.refs] == [("m.py", "client.session", False)]
+
+
+def test_attribute_chains_do_not_corrupt_memory(tmp_path):
+    """Regression: reading node.start_point once per reference (thousands of Point objects)
+    corrupts the heap in py-tree-sitter 0.26 and crashes the interpreter at exit (SIGSEGV/SIGBUS).
+    Must run in a subprocess because the crash is at teardown."""
+    import os, subprocess, sys
+    lines = ["import os", "class C:", "    def m(self):", "        pass", ""]
+    for i in range(2000):
+        lines += [f'v{i} = os.path.join("a", str({i})).strip().lower()',
+                  f'os.environ.get("K{i}").x.y.z()', f"w{i} = sys.argv.count.__doc__"]
+    src = tmp_path / "trigger.py"
+    src.write_text("\n".join(lines) + "\n")
+    # Keep only the refs: an Extraction kept alive until exit masks the crash.
+    code = ("from adrgraph.extractors.python import extract\n"
+            f"refs = extract('t.py', open({str(src)!r}, 'rb').read(), 't').refs\n"
+            "assert any(r.name == 'os.environ.get' and r.call for r in refs)\n"
+            "assert any(r.name == 'sys.argv.count.__doc__' and not r.call for r in refs)\n")
+    proc = subprocess.run([sys.executable, "-c", code], stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, text=True,
+                          cwd=str(tmp_path), env={**os.environ, "PYTHONPATH": str(Path(__file__).resolve().parents[1])})
+    assert proc.returncode == 0, f"exit {proc.returncode}: {proc.stderr[-500:]}"

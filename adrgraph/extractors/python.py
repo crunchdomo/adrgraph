@@ -4,6 +4,7 @@ import posixpath
 import tree_sitter_python
 from tree_sitter import Language, Node, Parser
 
+from adrgraph.extractors.lines import LineIndex
 from adrgraph.model import Edge, Extraction, RawImport, RawRef, Symbol, Unit, symbol_id
 
 LANG = "python"
@@ -25,8 +26,8 @@ def _dotted(node: Node) -> str | None:
     return None
 
 
-def _imports(node: Node, unit_id: str) -> list[RawImport]:
-    line = node.start_point.row + 1
+def _imports(node: Node, unit_id: str, lines: LineIndex) -> list[RawImport]:
+    line = lines.line(node.start_byte)
     if node.type == "import_statement":
         out = []
         for target in node.named_children:
@@ -65,17 +66,18 @@ def extract(rel_path: str, source: bytes, module_name: str) -> Extraction:
     kind = "package" if posixpath.basename(rel_path) == "__init__.py" else "module"
     ex.units.append(Unit(rel_path, rel_path, module_name, LANG, kind))
     tree = _PARSER.parse(source)
+    lines = LineIndex(source)
 
     def symbol(node: Node, qualified: str, kind: str) -> Symbol:
         name = qualified.rsplit(".", 1)[-1]
         return Symbol(symbol_id(rel_path, qualified), name, qualified, kind, LANG, rel_path,
-                      node.start_point.row + 1, node.end_point.row + 1, node.type)
+                      lines.line(node.start_byte), lines.line(max(node.end_byte - 1, node.start_byte)), node.type)
 
     def walk(node: Node, scope: str, owner: str, in_class: bool, in_function: bool) -> None:
         for child in node.children:
             t = child.type
             if t in ("import_statement", "import_from_statement"):
-                ex.imports.extend(_imports(child, rel_path))
+                ex.imports.extend(_imports(child, rel_path, lines))
             elif t == "function_definition" and not in_function:
                 qualified = f"{scope}.{_text(child.child_by_field_name('name'))}"
                 sym = symbol(child, qualified, "method" if in_class else "function")
@@ -99,7 +101,7 @@ def extract(rel_path: str, source: bytes, module_name: str) -> Extraction:
             elif t == "call":
                 name = _dotted(child.child_by_field_name("function"))
                 if name:
-                    ex.refs.append(RawRef(owner, name, child.start_point.row + 1, True))
+                    ex.refs.append(RawRef(owner, name, lines.line(child.start_byte), True))
                     args = child.child_by_field_name("arguments")
                     if args is not None:
                         walk(args, scope, owner, in_class, in_function)
@@ -108,7 +110,7 @@ def extract(rel_path: str, source: bytes, module_name: str) -> Extraction:
             elif t == "attribute":
                 name = _dotted(child)
                 if name and name.split(".", 1)[0] not in ("self", "cls"):
-                    ex.refs.append(RawRef(owner, name, child.start_point.row + 1, False))
+                    ex.refs.append(RawRef(owner, name, lines.line(child.start_byte), False))
                 elif not name:
                     walk(child, scope, owner, in_class, in_function)
             else:

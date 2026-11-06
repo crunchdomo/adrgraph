@@ -2,6 +2,7 @@
 import tree_sitter_hcl
 from tree_sitter import Language, Node, Parser
 
+from adrgraph.extractors.lines import LineIndex
 from adrgraph.model import Edge, Extraction, RawRef, Symbol, Unit, symbol_id
 
 LANG = "terraform"
@@ -60,17 +61,18 @@ def extract(rel_path: str, source: bytes, module_name: str) -> Extraction:
     ex = Extraction()
     ex.units.append(Unit(rel_path, rel_path, rel_path, LANG, "file"))
     tree = _PARSER.parse(source)
+    lines = LineIndex(source)
     body = next((c for c in tree.root_node.children if c.type == "body"), None)
     if body is None:
         return ex
 
     def add(node: Node, name: str, kind: str) -> None:
         sym = Symbol(symbol_id(rel_path, name), name, name, kind, LANG, rel_path,
-                     node.start_point.row + 1, node.end_point.row + 1, node.type)
+                     lines.line(node.start_byte), lines.line(max(node.end_byte - 1, node.start_byte)), node.type)
         ex.symbols.append(sym)
         ex.edges.append(Edge("CONTAINS", rel_path, sym.id))
         for ref in sorted(_references(node)):
-            ex.refs.append(RawRef(sym.id, ref, node.start_point.row + 1, False))
+            ex.refs.append(RawRef(sym.id, ref, lines.line(node.start_byte), False))
 
     for block in body.children:
         if block.type != "block":
