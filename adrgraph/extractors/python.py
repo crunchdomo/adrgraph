@@ -90,23 +90,46 @@ def extract(rel_path: str, source: bytes, module_name: str) -> Extraction:
         ex.edges.append(Edge("DERIVED_FROM", sym.id, ast_id(rel_path, node)))
         return sym
 
+    def define(node: Node, scope: str, owner: str, in_class: bool) -> str | None:
+        """Create the symbol for a function/class definition node, walk its body, return the symbol id."""
+        name_node = node.child_by_field_name("name")
+        if name_node is None:
+            return None
+        qualified = f"{scope}.{_text(name_node)}"
+        if node.type == "class_definition":
+            sym = symbol(node, qualified, "class")
+            bases = node.child_by_field_name("superclasses")
+            for base in (bases.children if bases is not None else []):
+                if base.is_named:
+                    ex.refs.append(RawRef(sym.id, _dotted(base) or _text(base), lines.line(base.start_byte), "inherits"))
+        else:
+            sym = symbol(node, qualified, "method" if in_class else "function")
+        ex.symbols.append(sym)
+        ex.edges.append(Edge("CONTAINS", owner, sym.id))
+        body = node.child_by_field_name("body")
+        if body is not None:
+            walk(body, qualified, sym.id, node.type == "class_definition", node.type != "class_definition")
+        return sym.id
+
     def walk(node: Node, scope: str, owner: str, in_class: bool, in_function: bool) -> None:
         for child in node.children:
             t = child.type
             if t in ("import_statement", "import_from_statement"):
                 ex.imports.extend(_imports(child, rel_path, lines))
-            elif t == "function_definition" and not in_function:
-                qualified = f"{scope}.{_text(child.child_by_field_name('name'))}"
-                sym = symbol(child, qualified, "method" if in_class else "function")
-                ex.symbols.append(sym)
-                ex.edges.append(Edge("CONTAINS", owner, sym.id))
-                walk(child.child_by_field_name("body"), qualified, sym.id, False, True)
-            elif t == "class_definition" and not in_function:
-                qualified = f"{scope}.{_text(child.child_by_field_name('name'))}"
-                sym = symbol(child, qualified, "class")
-                ex.symbols.append(sym)
-                ex.edges.append(Edge("CONTAINS", owner, sym.id))
-                walk(child.child_by_field_name("body"), qualified, sym.id, True, False)
+            elif t in ("function_definition", "class_definition") and not in_function:
+                define(child, scope, owner, in_class)
+            elif t == "decorated_definition" and not in_function:
+                definition = child.child_by_field_name("definition")
+                sym_id = define(definition, scope, owner, in_class) if definition is not None else None
+                for deco in child.children:
+                    if deco.type != "decorator" or sym_id is None:
+                        continue
+                    expr = next((c for c in deco.children if c.is_named), None)
+                    if expr is not None and expr.type == "call":
+                        expr = expr.child_by_field_name("function")
+                    name = _dotted(expr) if expr is not None else None
+                    if name:
+                        ex.refs.append(RawRef(sym_id, name, lines.line(deco.start_byte), "decorates"))
             elif t == "expression_statement" and not in_class and not in_function and child.named_children \
                     and child.named_children[0].type == "assignment":
                 left = child.named_children[0].child_by_field_name("left")

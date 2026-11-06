@@ -109,3 +109,18 @@ def test_import_and_call_edges_carry_lines(repo):
 
 def test_scan_passes_ast_through(repo):
     assert len(repo.ast) > 100 and any(d.label == "CHILD" for d in repo.ast_edges)
+
+
+def test_inherits_and_decorates_resolved(repo):
+    e = {(d.label, d.src, d.dst) for d in repo.edges}
+    assert ("INHERITS", "src/views.py::src.views.View", "src/views.py::src.views.Base") in e
+    assert ("INHERITS", "src/views.py::src.views.View", "src/contracts/c.py::src.contracts.c.Contract") in e
+    assert ("INHERITS", "src/views.py::src.views.Dyn", "unresolved::src.views.make_base()") in e
+    assert ("DECORATES", "src/views.py::src.views.View.get", "unresolved::functools.lru_cache") in e   # alias resolved
+    assert ("DECORATES", "src/views.py::src.views.handler", "src/views.py::src.views.route") in e
+    assert ("DECORATES", "src/views.py::src.views.handler", "unresolved::functools.wraps") in e
+
+
+def test_method_decorator_originates_from_method(repo):
+    srcs = {d.src for d in repo.edges if d.label == "DECORATES" and d.dst == "unresolved::functools.lru_cache"}
+    assert srcs == {"src/views.py::src.views.View.get"}

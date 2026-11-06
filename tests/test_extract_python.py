@@ -111,3 +111,18 @@ def test_text_truncated_and_escaped():
     e = extract("m.py", b'x = "' + b"a" * 600 + b'"\ny = """l1\nl2"""\n', "m")
     strings = [a for a in e.ast if a.kind == "string"]
     assert len(strings[0].text) == 512 and strings[1].text == '"""l1\nl2"""'   # escaping happens in graph.py, not here
+
+
+def test_inherits_and_decorates_refs():
+    e = ex("src/views.py")
+    rel = {(r.src_id.split("::")[1], r.name, r.relation) for r in e.refs if r.relation in ("inherits", "decorates")}
+    assert ("src.views.View", "Base", "inherits") in rel and ("src.views.View", "Contract", "inherits") in rel
+    assert ("src.views.View.get", "cache", "decorates") in rel          # method decorator, from the method
+    assert ("src.views.handler", "route", "decorates") in rel           # call-form decorator uses the callee
+    assert ("src.views.handler", "functools.wraps", "decorates") in rel
+    assert ("src.views.Dyn", "make_base()", "inherits") in rel
+
+
+def test_class_without_bases_has_no_inherits_edge():
+    e = ex("src/views.py")
+    assert not any(r.relation == "inherits" and r.src_id.endswith("src.views.Plain") for r in e.refs)
