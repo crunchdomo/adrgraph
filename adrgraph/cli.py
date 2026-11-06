@@ -1,4 +1,4 @@
-"""adrgraph command line: build, check, audit, query."""
+"""adrgraph command line: build, check, audit, explain, report, suggest, query."""
 import argparse
 import datetime
 import json
@@ -20,6 +20,7 @@ from adrgraph.render.html import render_html
 from adrgraph.render.text import render_text
 from adrgraph.rules import RuleError, compile_rule, portability
 from adrgraph.schema import load_adrs as load_adr_graph, open_graph
+from adrgraph.suggest import rule_yaml, suggest, write_draft
 from adrgraph.trail import build_trail, trail_dict
 from srcgraph.source import Source
 
@@ -79,6 +80,11 @@ def _parser() -> argparse.ArgumentParser:
     e.add_argument("decision", nargs="?", help="restrict path:line to one decision id")
     e.add_argument("--format", choices=["text", "json"], default="text")
     e.add_argument("--baseline", default=BASELINE)
+    s = sub.add_parser("suggest", help="propose rules for invariants the code already keeps")
+    common(s)
+    s.add_argument("--min", type=int, default=2, help="minimum backing edges or classes (default 2)")
+    s.add_argument("--all", action="store_true", help="include candidates an existing rule already covers")
+    s.add_argument("--write", action="store_true", help="write each candidate as a proposed ADR in the first --adr dir")
     q = sub.add_parser("query", help="run Cypher against the last built graph")
     q.add_argument("--db", default=DB)
     q.add_argument("--format", choices=["text", "json"], default="text")
@@ -216,6 +222,20 @@ def _run(args, out, err) -> int:
             with open(args.output, "w", encoding="utf-8") as fh:
                 fh.write(render_html(trails, decisions, result.metrics, binds))
             print(f"wrote {args.output} ({len(trails)} findings)", file=out)
+            return 0
+        if args.command == "suggest":
+            cands = suggest(graph, decisions, args.min, args.all)
+            if not cands:
+                print("no new candidates", file=out)
+            elif args.write:
+                adr_dir = (args.adr or ["docs/adr"])[0]
+                number = max([int(d.id.rsplit("-", 1)[-1]) for d in decisions if d.id.rsplit("-", 1)[-1].isdigit()], default=0)
+                for c in cands:
+                    number += 1
+                    print(f"wrote {write_draft(c, adr_dir, number)}", file=out)
+            else:
+                for c in cands:
+                    print(f"# {c.title}  (strength {c.strength})\n{rule_yaml(c)}", file=out)
             return 0
         findings = run_audit(graph, decisions, datetime.date.today(), strict=args.strict)
         if args.format == "json":

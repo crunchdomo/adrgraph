@@ -131,3 +131,41 @@ def test_check_trails_requires_json(cwd, tmp_path, capsys):
     with pytest.raises(SystemExit) as exc:
         main(["check", "--db", str(tmp_path / "g.lbug"), "--trails"])
     assert exc.value.code == 2
+
+
+@pytest.fixture
+def fresh(tmp_path, monkeypatch):
+    """A repo with no ADRs: two files under src/a import requests, three elsewhere import only stdlib."""
+    for d in ("src/a", "src/b", "docs/adr"):
+        (tmp_path / d).mkdir(parents=True)
+    (tmp_path / "src/a/x.py").write_text("import requests\n")
+    (tmp_path / "src/a/y.py").write_text("import requests.auth\n")
+    for f in ("src/b/z.py", "src/b/w.py", "src/c.py"):
+        (tmp_path / f).write_text("import os\n")
+    monkeypatch.chdir(tmp_path)
+    return tmp_path
+
+
+def test_suggest_prints_then_writes_a_draft_that_covers_itself(fresh, capsys):
+    code, out, _ = run(capsys, "suggest", "--db", "g.lbug")
+    assert code == 0
+    assert "# Only src/a/** may import requests  (strength 2)" in out
+    assert "- id: requests-only-via-src-a" in out and 'only: {"from": {"path": "src/a/**"}' in out
+    code, out, _ = run(capsys, "suggest", "--db", "g.lbug", "--write")
+    path = fresh / "docs/adr/0001-requests-only-via-src-a.md"
+    assert code == 0 and path.exists() and "wrote docs/adr/0001-requests-only-via-src-a.md" in out
+    text = path.read_text()
+    assert text.startswith("---\nid: ADR-0001\ntitle: Only src/a/** may import requests\nstatus: proposed\n")
+    assert "## Context\n\nTODO" in text and "## Decision\n\nTODO" in text and "## Consequences\n\nTODO" in text
+    code, out, _ = run(capsys, "suggest", "--db", "g.lbug")
+    assert code == 0 and out.strip() == "no new candidates"
+    code, out, _ = run(capsys, "suggest", "--db", "g.lbug", "--all")
+    assert "requests-only-via-src-a" in out
+    code, out, _ = run(capsys, "check", "--db", "g.lbug", "--baseline", "b.json")
+    assert code == 0 and "ADR-0001: 100.0% (1 rules, 0 violations)" in out
+
+
+def test_suggest_write_continues_the_numbering(fresh, capsys):
+    (fresh / "docs/adr/0003-x.md").write_text("---\nid: ADR-0003\ntitle: x\nstatus: accepted\n---\n")
+    code, _, _ = run(capsys, "suggest", "--db", "g.lbug", "--write")
+    assert code == 0 and (fresh / "docs/adr/0004-requests-only-via-src-a.md").exists()

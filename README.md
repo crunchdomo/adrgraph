@@ -111,6 +111,7 @@ adrgraph explain src/x.py:9           # why is there a finding here? the full pr
 adrgraph explain ADR-0004/my-rule     # every finding of one rule
 adrgraph report                       # .adrgraph/report.html: every finding as a trail, every ADR with what it binds
 adrgraph check --format json --trails # machine-readable findings with their trails
+adrgraph suggest                      # rules for invariants the code already keeps; --write drafts them as proposed ADRs
 adrgraph build                        # just build .adrgraph/graph.lbug
 adrgraph query "<cypher>"             # ad hoc Cypher against the last build
 ```
@@ -160,6 +161,15 @@ git add .adrgraph/baseline.json
 ```
 
 From then on `check` reports baselined violations without failing, flags new ones, and reports fixed ones. Rewrite the baseline when you want to ratchet it down.
+
+### Starting with no ADRs
+
+```bash
+adrgraph suggest            # candidate rules, strongest first, as ready-to-paste YAML
+adrgraph suggest --write    # one proposed ADR per candidate in docs/adr/, prose left as TODOs
+```
+
+`suggest` mines two patterns: an external package imported from only one file or directory becomes an `only` rule over IMPORTS (standard-library packages are ignored), and a directory whose classes mostly share a base class becomes a `must` rule over INHERITS, with the non-conforming classes listed under `except`. Every candidate is evaluated against the graph before it is printed, so each one holds today; a convention the code already breaks is never proposed. `--min N` sets the floor on backing edges or classes (default 2), and candidates an existing rule already covers (same shape, same target) are hidden unless you pass `--all`. On a repo that already has ADRs it is a way to find what nobody wrote down.
 
 ### Local only, no CI
 
