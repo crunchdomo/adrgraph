@@ -9,3 +9,4 @@ dist/
 .superpowers/
 .DS_Store
 build/
+.adrgraph/report.html

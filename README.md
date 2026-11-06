@@ -4,11 +4,15 @@ Architecture decision records are prose. Code is structure. Nothing checks one a
 
 No server. The graph lives in an embedded [LadybugDB](https://github.com/LadybugDB/ladybug) file that is rebuilt on every run and queryable in Cypher.
 
+**Two projects.** The code-to-graph engine is [srcgraph](https://github.com/crunchdomo/srcgraph): parsing, resolution, both tiers, the store, `build` and `query`. adrgraph depends on it and adds decisions, rules, verdicts and provenance. If you want the graph without ADRs, install srcgraph alone.
+
 ## Install
 
 ```bash
 pipx install adrgraph        # or: pip install adrgraph inside a virtualenv
 ```
+
+Until both packages are on PyPI: `pipx install --force <adrgraph wheel> --pip-args "git+https://github.com/crunchdomo/srcgraph"`.
 
 Python 3.11 or later. Python and Terraform (HCL) are supported out of the box.
 
@@ -83,15 +87,7 @@ A selector picks graph nodes. Keys are ANDed: `path` (glob, `**` allowed), `kind
 
 ## The graph
 
-Two tiers in one database.
-
-**Semantic tier.** `Unit` (file, package, module, or an `external` import such as `logging`), `Symbol` (function, method, class, variable, Terraform resource, ...), `Decision`, `Rule`. Edges: `CONTAINS`, `IMPORTS`, `CALLS`, `REFERENCES`, `INHERITS`, `DECORATES` (and `READS`, `WRITES`, `TYPE_OF`, `OVERRIDES`, declared but not yet emitted), each carrying the source `line`; `HAS_RULE`, `SUPERSEDES`, `DEPENDS_ON`, `CONFLICTS_WITH`, `BINDS` (rule or decision to the code it matched).
-
-**Syntax tier.** Every named tree-sitter node of every file as an `Ast` node with `kind` (the grammar's name, e.g. `class_definition`), `norm` (a shared name where one applies), `line`, `start_byte`, `end_byte`, `field` (its slot in the parent), and `text` for leaves and short high-value nodes. Edges: `CHILD` (with `field`), `NEXT` (sibling order). Each `Unit` and `Symbol` has a `DERIVED_FROM` edge to the syntax node it came from.
-
-The normalised vocabulary is fixed in the core: `ClassDef`, `FunctionDef`, `Call`, `Assign`, `Import`, `Decorator`, `Attribute`, `Name`, `String`, `Return`, `If`, `Loop`, `Try`, `Lambda`, `Parameter`, `Argument`, `Block`, `Comment`, `Type`, `Literal`. Text is stored for `Decorator`, `Attribute`, `String`, `Name`, `Literal`, `Type`, `Import` and for leaves, capped at 512 bytes.
-
-Rules use the semantic tier by default; it is language-neutral. When it cannot say something, a raw `cypher` rule reaches the syntax tier, and `audit` reports each rule's portability: `semantic`, `normalised` (uses only `norm`), or `grammar` (uses `kind`, tied to one language).
+The graph is srcgraph's; its [README](https://github.com/crunchdomo/srcgraph#the-graph) documents both tiers, the edge labels and the normalised vocabulary. adrgraph adds `Decision` and `Rule` nodes with `HAS_RULE`, `SUPERSEDES`, `DEPENDS_ON`, `CONFLICTS_WITH` and `BINDS` (rule or decision to the code it matched). Rules use the semantic tier by default; raw `cypher` rules may reach the syntax tier, and `audit` reports each rule's portability: `semantic`, `normalised` (uses only `norm`), or `grammar` (uses `kind`, tied to one language).
 
 ### Queries worth knowing
 
@@ -105,17 +101,21 @@ adrgraph query "MATCH (s:Symbol {name:'view'})-[:DERIVED_FROM]->(r)-[:CHILD*]->(
 ## Commands
 
 ```bash
-adrgraph check                 # build the graph, evaluate rules, exit 1 on violations
-adrgraph audit                 # ADR-level checks and the portability summary
-adrgraph build                 # just build .adrgraph/graph.lbug
-adrgraph query "<cypher>"      # ad hoc Cypher against the last build
+adrgraph check                        # build the graph, evaluate rules, exit 1 on violations
+adrgraph audit                        # ADR-level checks and the portability summary
+adrgraph explain src/x.py:9           # why is there a finding here? the full provenance trail
+adrgraph explain ADR-0004/my-rule     # every finding of one rule
+adrgraph report                       # .adrgraph/report.html: every finding as a trail, every ADR with what it binds
+adrgraph check --format json --trails # machine-readable findings with their trails
+adrgraph build                        # just build .adrgraph/graph.lbug
+adrgraph query "<cypher>"             # ad hoc Cypher against the last build
 ```
 
 `--adr` and `--src` repeat. With a `src/` layout (code imports `gateway.client`, not `src.gateway.client`) pass `--src src` so imports resolve; adrgraph warns when an import went unresolved but matches a scanned module under a deeper prefix. `--exclude` adds names or globs to the defaults (`.git`, `.venv`, `node_modules`, `.terraform`, ...). `--format json` on `check` and `audit`.
 
 Rules on `proposed` decisions run as warnings. Rules on `superseded` or `deprecated` decisions are skipped by `check` and reported by `audit` if they would still fire.
 
-### Findings
+### Findings and provenance
 
 ```
 error     src/other/x.py:1   ADR-0003/gateway-only-via-contracts  reaches src/gateway/client.py
@@ -123,6 +123,26 @@ warn      src/handlers/h.py:10  ADR-0003/no-handler-calls-db  reaches src/db/q.p
 ```
 
 Import violations point at the import line. Transitive violations print the shortest path. JSON output carries `path_nodes`.
+
+Every finding has a **trail**: decision → rule → violating node (with the source lines) → the edge or path that broke the rule → the syntax node it came from → which other ADRs govern the same code and whether the finding is baselined. `explain` prints it:
+
+```
+ADR-0004  Use PySide6 for menus and insights            docs/adr/0004-use-pyside6-for-menus-and-insights.md
+  Decision: "PySide6 for the menu and insight windows; the replay itself stays on Arcade."
+  rule pyside-only-in-ui   only {'path': 'src/gui/**'} may reach {'kind': 'unit', 'name': 'PySide6*'} via IMPORTS   [error, semantic]
+
+violates  src/services/stream.py:9   (outside the from set and not excepted)
+   6 │ import json
+   7 │ import threading
+   8 │ import time
+   9 │ from PySide6.QtCore import QThread, Signal      ← IMPORTS → PySide6.QtCore (external)
+  10 │
+
+derived from  Ast module  src/services/stream.py#0:4012:module
+baselined  yes  (.adrgraph/baseline.json)
+```
+
+`report` writes the same trails for every finding into one HTML page, plus a section per ADR listing the code it binds to.
 
 ### Audit checks
 
