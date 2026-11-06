@@ -15,8 +15,12 @@ from adrgraph.adr import AdrError, Decision, load_adrs
 from adrgraph.audit import run_audit
 from adrgraph.baseline import load_baseline, save_baseline
 from adrgraph.check import bind, bind_scopes, run_check
+from adrgraph.render.json import trail_dict
+from adrgraph.render.text import render_text
 from adrgraph.rules import RuleError, compile_rule, portability
 from adrgraph.schema import load_adrs as load_adr_graph, open_graph
+from adrgraph.trail import build_trail
+from srcgraph.source import Source
 
 DB = ".adrgraph/graph.lbug"
 BASELINE = ".adrgraph/baseline.json"
@@ -64,11 +68,45 @@ def _parser() -> argparse.ArgumentParser:
     common(a)
     a.add_argument("--format", choices=["text", "json"], default="text")
     a.add_argument("--strict", action="store_true", help="treat warnings as errors")
+    e = sub.add_parser("explain", help="show the provenance trail behind a finding")
+    common(e)
+    e.add_argument("target", help="path:line, or ADR-ID/rule-id")
+    e.add_argument("decision", nargs="?", help="restrict path:line to one decision id")
+    e.add_argument("--format", choices=["text", "json"], default="text")
+    e.add_argument("--baseline", default=BASELINE)
     q = sub.add_parser("query", help="run Cypher against the last built graph")
     q.add_argument("--db", default=DB)
     q.add_argument("--format", choices=["text", "json"], default="text")
     q.add_argument("cypher")
     return p
+
+
+def _select_findings(findings, target: str, decision: str | None):
+    """path:line [decision] or ADR-ID/rule-id."""
+    if "/" in target and ":" not in target.rsplit("/", 1)[-1] and not target.endswith(".py"):
+        did, _, rid = target.partition("/")
+        if not target.startswith("ADR") and ":" in target:
+            pass
+        matched = [f for f in findings if f.decision == did and f.rule == rid]
+        if matched:
+            return matched
+    path, _, line = target.rpartition(":")
+    if not line.isdigit():
+        return []
+    matched = [f for f in findings if f.path == path and f.line == int(line)]
+    return [f for f in matched if decision is None or f.decision == decision]
+
+
+def _colour(text: str, out) -> str:
+    """Red for the violates line and the highlighted source line, only on a TTY."""
+    if not getattr(out, "isatty", lambda: False)():
+        return text
+    lines = []
+    for line in text.splitlines():
+        if line.startswith("violates  ") or "      ← " in line:
+            line = f"\x1b[31m{line}\x1b[0m"
+        lines.append(line)
+    return "\n".join(lines) + "\n"
 
 
 def _pct(v: float | None) -> str:
@@ -133,6 +171,20 @@ def _run(args, out, err) -> int:
         if args.command == "build":
             print(f"built {args.db}: {graph.count('Unit')} units, {graph.count('Symbol')} symbols, "
                   f"{graph.count('Ast')} syntax nodes, {graph.count('Decision')} decisions, {graph.count('Rule')} rules", file=out)
+            return 0
+        if args.command == "explain":
+            result = run_check(graph, decisions, load_baseline(args.baseline))
+            matched = _select_findings(result.findings, args.target, args.decision)
+            if not matched:
+                print(f"no finding at {args.target}", file=err)
+                return 1
+            source = Source(".")
+            trails = [build_trail(graph, decisions, f, result.findings, args.baseline, source.lines) for f in matched]
+            if args.format == "json":
+                print(json.dumps([trail_dict(t) for t in trails], indent=2), file=out)
+            else:
+                for t in trails:
+                    print(_colour(render_text(t), out), file=out)
             return 0
         if args.command == "check":
             result = run_check(graph, decisions, load_baseline(args.baseline))

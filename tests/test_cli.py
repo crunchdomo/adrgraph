@@ -90,3 +90,24 @@ def test_bad_scope_selector_names_the_decision(tmp_path, monkeypatch, capsys):
     monkeypatch.chdir(tmp_path)
     code, _, err = run(capsys, "check", "--db", str(tmp_path / "g.lbug"))
     assert code == 2 and "ADR-7" in err and "nmae" in err and "Traceback" not in err
+
+
+def test_explain_path_line(cwd, tmp_path, capsys):
+    code, out, _ = run(capsys, "explain", "src/other/x.py:1", "--db", str(tmp_path / "g.lbug"), "--baseline", str(tmp_path / "b.json"))
+    assert code == 0 and "rule gateway-only-via-contracts" in out and "from src.gateway import client" in out
+
+
+def test_explain_rule_form(cwd, tmp_path, capsys):
+    code, out, _ = run(capsys, "explain", "ADR-0001/no-handler-calls-db", "--db", str(tmp_path / "g.lbug"), "--baseline", str(tmp_path / "b.json"))
+    assert code == 0 and "path  " in out and "src.db.q.run" in out
+
+
+def test_explain_no_match_exits_1(cwd, tmp_path, capsys):
+    code, out, err = run(capsys, "explain", "src/other/x.py:99", "--db", str(tmp_path / "g.lbug"), "--baseline", str(tmp_path / "b.json"))
+    assert code == 1 and "no finding at" in err
+
+
+def test_explain_json(cwd, tmp_path, capsys):
+    code, out, _ = run(capsys, "explain", "src/other/x.py:1", "--db", str(tmp_path / "g.lbug"), "--baseline", str(tmp_path / "b.json"), "--format", "json")
+    data = json.loads(out)
+    assert code == 0 and len(data) == 1 and data[0]["steps"][0]["kind"] == "decision"
