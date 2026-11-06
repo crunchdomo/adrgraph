@@ -26,3 +26,15 @@ def test_scan_resolves_terraform_refs(monkeypatch):
     e = {(d.label, d.src, d.dst) for d in scan(["."]).edges}
     assert ("REFERENCES", "main.tf::aws_s3_bucket_policy.p", "main.tf::aws_s3_bucket.logs") in e
     assert ("REFERENCES", "main.tf::output.vpc", "main.tf::module.net") in e
+
+
+def test_terraform_syntax_tier():
+    e = extract("main.tf", Path("tests/fixtures/tf/main.tf").read_bytes(), "main.tf")
+    assert any(a.kind == "block" and a.norm == "" for a in e.ast)
+    s = next(a for a in e.ast if a.kind == "string_lit" and a.text == '"aws_s3_bucket"')
+    assert s.norm == "String"
+    logs = next(x for x in e.symbols if x.name == "aws_s3_bucket.logs")
+    link = next(d for d in e.edges if d.label == "DERIVED_FROM" and d.src == logs.id)
+    assert link.dst.endswith(":block")
+    suffix = next(x for x in e.symbols if x.name == "local.suffix")
+    assert next(d for d in e.edges if d.label == "DERIVED_FROM" and d.src == suffix.id).dst.endswith(":attribute")

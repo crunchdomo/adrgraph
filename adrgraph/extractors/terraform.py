@@ -3,10 +3,14 @@ import tree_sitter_hcl
 from tree_sitter import Language, Node, Parser
 
 from adrgraph.extractors.lines import LineIndex
+from adrgraph.extractors.syntax import ast_id, emit_syntax
 from adrgraph.model import Edge, Extraction, RawRef, Symbol, Unit, symbol_id
 
 LANG = "terraform"
 _PARSER = Parser(Language(tree_sitter_hcl.language()))
+# Blocks stay unnormalised: they are already first-class Symbols.
+TF_NORM = {"attribute": "Assign", "identifier": "Name", "string_lit": "String", "function_call": "Call",
+           "numeric_lit": "Literal", "bool_lit": "Literal", "variable_expr": "Name", "get_attr": "Attribute"}
 _COMPONENTS = {"var": 2, "local": 2, "module": 2, "data": 3}
 
 
@@ -62,6 +66,8 @@ def extract(rel_path: str, source: bytes, module_name: str) -> Extraction:
     ex.units.append(Unit(rel_path, rel_path, rel_path, LANG, "file"))
     tree = _PARSER.parse(source)
     lines = LineIndex(source)
+    ex.ast, ex.ast_edges = emit_syntax(tree.root_node, TF_NORM, rel_path, LANG, lines)
+    ex.edges.append(Edge("DERIVED_FROM", rel_path, ast_id(rel_path, tree.root_node)))
     body = next((c for c in tree.root_node.children if c.type == "body"), None)
     if body is None:
         return ex
@@ -71,6 +77,7 @@ def extract(rel_path: str, source: bytes, module_name: str) -> Extraction:
                      lines.line(node.start_byte), lines.line(max(node.end_byte - 1, node.start_byte)), node.type)
         ex.symbols.append(sym)
         ex.edges.append(Edge("CONTAINS", rel_path, sym.id))
+        ex.edges.append(Edge("DERIVED_FROM", sym.id, ast_id(rel_path, node)))
         for ref in sorted(_references(node)):
             ex.refs.append(RawRef(sym.id, ref, lines.line(node.start_byte), "references"))
 
