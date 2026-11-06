@@ -2,7 +2,7 @@
 
 ### Issue tracker
 
-Issues and specs live as local markdown files under `.scratch/<feature-slug>/`. See `docs/agents/issue-tracker.md`.
+Issues live in GitHub Issues for `crunchdomo/adrgraph` (via the `gh` CLI). See `docs/agents/issue-tracker.md`.
 
 ### Triage labels
 
