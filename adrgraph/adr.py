@@ -37,6 +37,9 @@ class Decision:
     supersedes: list[str]
     path: str
     rules: list[Rule] = field(default_factory=list)
+    depends_on: list[str] = field(default_factory=list)
+    conflicts_with: list[str] = field(default_factory=list)
+    scope: list[dict] = field(default_factory=list)
 
 
 def _rule(raw: dict, decision_id: str, path: str) -> Rule:
@@ -81,6 +84,9 @@ def _decision(path: str) -> Decision | None:
     if len(ids) != len(set(ids)):
         raise AdrError(f"{path}: {did} has duplicate rule ids")
     supersedes = meta.get("supersedes") or []
+    scope = meta.get("scope") or []
+    if not isinstance(scope, list) or not all(isinstance(x, dict) for x in scope):
+        raise AdrError(f"{path}: {did} scope must be a list of selector maps")
     return Decision(
         id=did,
         title=str(meta["title"]),
@@ -91,6 +97,9 @@ def _decision(path: str) -> Decision | None:
         supersedes=[str(s) for s in supersedes],
         path=path,
         rules=rules,
+        depends_on=[str(s) for s in meta.get("depends_on") or []],
+        conflicts_with=[str(s) for s in meta.get("conflicts_with") or []],
+        scope=scope,
     )
 
 

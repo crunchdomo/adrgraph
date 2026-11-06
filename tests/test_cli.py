@@ -61,3 +61,14 @@ def test_malformed_adr_exits_2_naming_the_culprit(tmp_path, monkeypatch, capsys,
     for cmd in ("check", "audit"):
         code, _, err = run(capsys, cmd, "--db", str(tmp_path / "g.lbug"))
         assert code == 2 and needle in err and "Traceback" not in err
+
+
+def test_scope_binds_decision_to_code(tmp_path, monkeypatch, capsys):
+    (tmp_path / "docs" / "adr").mkdir(parents=True)
+    (tmp_path / "docs" / "adr" / "x.md").write_text("---\nid: ADR-1\ntitle: t\nstatus: accepted\nscope:\n  - { path: \"src/**\" }\n---\n")
+    (tmp_path / "src").mkdir(); (tmp_path / "src" / "m.py").write_text("x = 1\n")
+    monkeypatch.chdir(tmp_path)
+    db = str(tmp_path / "g.lbug")
+    assert run(capsys, "build", "--db", db)[0] == 0
+    code, out, _ = run(capsys, "query", "--db", db, "MATCH (d:Decision)-[:BINDS]->(n) RETURN count(*) AS c")
+    assert code == 0 and int(out.splitlines()[1]) >= 1

@@ -56,3 +56,9 @@ def test_only_compliance_never_negative(layered):
 
 def test_missing_baseline_is_empty(tmp_path):
     assert load_baseline(str(tmp_path / "none.json")) == set()
+
+
+def test_bind_scopes(layered):
+    d = dec("ADR-7", "accepted", []); d.scope = [{"path": "src/db/**"}, {"path": "src/log.py", "kind": "unit"}]
+    from adrgraph.check import bind_scopes
+    assert bind_scopes(layered, [d]) == {"ADR-7": ["src/db/q.py", "src/db/q.py::q.run", "src/log.py"]}

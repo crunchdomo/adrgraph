@@ -9,7 +9,7 @@ from adrgraph import __version__
 from adrgraph.adr import AdrError, Decision, load_adrs
 from adrgraph.audit import run_audit
 from adrgraph.baseline import load_baseline, save_baseline
-from adrgraph.check import bind, run_check
+from adrgraph.check import bind, bind_scopes, run_check
 from adrgraph.graph import Graph
 from adrgraph.rules import RuleError, compile_rule
 from adrgraph.scan import DEFAULT_EXCLUDES, scan
@@ -29,6 +29,7 @@ def build(adr_dirs: list[str], src_roots: list[str], excludes: tuple[str, ...], 
     graph = Graph(db_path)
     graph.load(result.units, result.symbols, decisions, result.edges, ast=result.ast, ast_edges=result.ast_edges)
     binds = [(key, node) for key, nodes in bind(graph, decisions).items() for node in nodes]
+    binds += [(did, node) for did, nodes in bind_scopes(graph, decisions).items() for node in nodes]
     graph.load([], [], [], [], binds=binds)
     return graph, decisions, result.warnings
 

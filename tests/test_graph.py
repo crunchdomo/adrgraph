@@ -76,3 +76,14 @@ def test_repeated_load_appends(tmp_path):
     g.load([], [], [], [Edge("IMPORTS", "src/b.py", "src/a.py")])
     assert g.count("Unit") == 2 and g.query("MATCH ()-[r:IMPORTS]->() RETURN count(*) AS c") == [{"c": 2}]
     g.close()
+
+
+def test_decision_relations_and_scope_binds(tmp_path):
+    g = Graph(str(tmp_path / "g.lbug"))
+    a = Decision("ADR-1", "t", "accepted", "", "2026-01-01", None, [], "a.md", [])
+    b = Decision("ADR-2", "t", "accepted", "", "2026-01-01", None, [], "b.md", [])
+    b.depends_on = ["ADR-1"]
+    g.load(units(), [], [a, b], [], binds=[("ADR-2", "src/a.py")])
+    assert g.query("MATCH (x:Decision)-[:DEPENDS_ON]->(y:Decision) RETURN x.id AS x, y.id AS y") == [{"x": "ADR-2", "y": "ADR-1"}]
+    assert g.query("MATCH (d:Decision)-[:BINDS]->(u:Unit) RETURN d.id AS d, u.id AS u") == [{"d": "ADR-2", "u": "src/a.py"}]
+    g.close()

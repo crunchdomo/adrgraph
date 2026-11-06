@@ -50,3 +50,23 @@ def test_contradiction_only_when_no_permitted_target(layered):
     assert checks(run_audit(layered, [dec("ADR-1", "accepted", [m, only_blocks])], TODAY)) == [("contradiction", "ADR-1", "m")]
     other_via = never("n", {"path": "src/handlers/**"}, {"path": "src/log.py"}, via="IMPORTS")
     assert checks(run_audit(layered, [dec("ADR-1", "accepted", [m, other_via])], TODAY)) == []
+
+
+def test_dependency_and_declared_conflict(layered):
+    a = dec("ADR-1", "accepted", []); a.depends_on = ["ADR-2", "ADR-9"]
+    b = dec("ADR-2", "proposed", []); b.conflicts_with = ["ADR-3"]
+    c = dec("ADR-3", "accepted", []); c.conflicts_with = []
+    fs = run_audit(layered, [a, b, c], TODAY)
+    assert checks(fs) == [("dependency", "ADR-1", ""), ("dependency", "ADR-1", "")]
+    msgs = sorted(f.message for f in fs)
+    assert "ADR-2" in msgs[0] and "proposed" in msgs[0] and "ADR-9" in msgs[1]
+    b.status = "accepted"
+    assert ("declared_conflict", "ADR-2", "") in checks(run_audit(layered, [a, b, c], TODAY))
+
+
+def test_empty_scope_and_self_reference(layered):
+    d = dec("ADR-1", "accepted", []); d.scope = [{"path": "src/handlers/**"}, {"path": "nowhere/**"}]; d.depends_on = ["ADR-1"]
+    fs = run_audit(layered, [d], TODAY)
+    assert checks(fs) == [("dependency", "ADR-1", ""), ("empty_scope", "ADR-1", "")]
+    assert "names itself" in next(f for f in fs if f.check == "dependency").message
+    assert "nowhere" in next(f for f in fs if f.check == "empty_scope").message

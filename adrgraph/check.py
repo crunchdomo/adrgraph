@@ -4,7 +4,7 @@ from dataclasses import dataclass, field
 from adrgraph.adr import Decision
 from adrgraph.baseline import Key
 from adrgraph.graph import Graph, rule_key
-from adrgraph.rules import bound_ids, evaluate
+from adrgraph.rules import bound_ids, evaluate, matched_ids
 
 SEVERITIES = ("error", "warn", "baselined", "fixed")
 
@@ -46,6 +46,11 @@ class CheckResult:
 
 def bind(graph: Graph, decisions: list[Decision]) -> dict[str, list[str]]:
     return {rule_key(d.id, r.id): bound_ids(graph, r) or [] for d in decisions for r in d.rules}
+
+
+def bind_scopes(graph: Graph, decisions: list[Decision]) -> dict[str, list[str]]:
+    """Decision id -> every node its `scope` selectors match (rules or not)."""
+    return {d.id: sorted({n for sel in d.scope for n in matched_ids(graph, sel)}) for d in decisions if d.scope}
 
 
 def _compliance(rules: list[RuleMetrics]) -> float | None:
