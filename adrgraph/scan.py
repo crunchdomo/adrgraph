@@ -6,7 +6,7 @@ import sys
 from dataclasses import dataclass, field
 
 from adrgraph.extractors import EXTRACTORS
-from adrgraph.model import REF_RELATIONS, Edge, Extraction, RawImport, Symbol, Unit, unresolved_id
+from adrgraph.model import REF_RELATIONS, AstNode, Edge, Extraction, RawImport, Symbol, Unit, unresolved_id
 from adrgraph.selectors import glob_to_regex
 
 DEFAULT_EXCLUDES = (".git", ".venv", "venv", "node_modules", ".terraform", ".adrgraph", "__pycache__")
@@ -18,6 +18,8 @@ class ScanResult:
     symbols: list[Symbol] = field(default_factory=list)
     edges: list[Edge] = field(default_factory=list)
     warnings: list[str] = field(default_factory=list)
+    ast: list[AstNode] = field(default_factory=list)
+    ast_edges: list[Edge] = field(default_factory=list)
 
 
 def module_name(root: str, rel_to_root: str) -> str:
@@ -102,6 +104,8 @@ def scan(roots: list[str], excludes: tuple[str, ...] = DEFAULT_EXCLUDES) -> Scan
         units.update((u.id, u) for u in ex.units)
         symbols.update((s.id, s) for s in ex.symbols)
         res.edges.extend(ex.edges)
+        res.ast.extend(ex.ast)
+        res.ast_edges.extend(ex.ast_edges)
     # Python names are global (module paths); other languages resolve within a directory.
     def scope(lang: str, path: str) -> str:
         return "" if lang == "python" else posixpath.dirname(path)

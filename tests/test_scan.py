@@ -105,3 +105,7 @@ def test_import_and_call_edges_carry_lines(repo):
     assert lines[("IMPORTS", "src/handlers/h.py", "logging")] == 1
     assert lines[("IMPORTS", "src/handlers/h.py", "src/db/q.py")] == 3
     assert lines[("CALLS", "src/handlers/h.py::src.handlers.h.leak", "src/db/q.py::src.db.q.run")] == 10
+
+
+def test_scan_passes_ast_through(repo):
+    assert len(repo.ast) > 100 and any(d.label == "CHILD" for d in repo.ast_edges)

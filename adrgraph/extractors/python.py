@@ -5,10 +5,23 @@ import tree_sitter_python
 from tree_sitter import Language, Node, Parser
 
 from adrgraph.extractors.lines import LineIndex
+from adrgraph.extractors.syntax import ast_id, emit_syntax
 from adrgraph.model import Edge, Extraction, RawImport, RawRef, Symbol, Unit, symbol_id
 
 LANG = "python"
 _PARSER = Parser(Language(tree_sitter_python.language()))
+PY_NORM = {
+    "class_definition": "ClassDef", "function_definition": "FunctionDef", "call": "Call",
+    "assignment": "Assign", "augmented_assignment": "Assign",
+    "import_statement": "Import", "import_from_statement": "Import",
+    "decorator": "Decorator", "attribute": "Attribute", "identifier": "Name", "string": "String",
+    "return_statement": "Return", "if_statement": "If", "for_statement": "Loop", "while_statement": "Loop",
+    "try_statement": "Try", "lambda": "Lambda",
+    "default_parameter": "Parameter", "typed_parameter": "Parameter", "typed_default_parameter": "Parameter",
+    "list_splat_pattern": "Parameter", "dictionary_splat_pattern": "Parameter",
+    "keyword_argument": "Argument", "block": "Block", "comment": "Comment", "type": "Type",
+    "integer": "Literal", "float": "Literal", "true": "Literal", "false": "Literal", "none": "Literal",
+}
 
 
 def _text(node: Node) -> str:
@@ -67,11 +80,15 @@ def extract(rel_path: str, source: bytes, module_name: str) -> Extraction:
     ex.units.append(Unit(rel_path, rel_path, module_name, LANG, kind))
     tree = _PARSER.parse(source)
     lines = LineIndex(source)
+    ex.ast, ex.ast_edges = emit_syntax(tree.root_node, PY_NORM, rel_path, LANG, lines)
+    ex.edges.append(Edge("DERIVED_FROM", rel_path, ast_id(rel_path, tree.root_node)))
 
     def symbol(node: Node, qualified: str, kind: str) -> Symbol:
         name = qualified.rsplit(".", 1)[-1]
-        return Symbol(symbol_id(rel_path, qualified), name, qualified, kind, LANG, rel_path,
-                      lines.line(node.start_byte), lines.line(max(node.end_byte - 1, node.start_byte)), node.type)
+        sym = Symbol(symbol_id(rel_path, qualified), name, qualified, kind, LANG, rel_path,
+                     lines.line(node.start_byte), lines.line(max(node.end_byte - 1, node.start_byte)), node.type)
+        ex.edges.append(Edge("DERIVED_FROM", sym.id, ast_id(rel_path, node)))
+        return sym
 
     def walk(node: Node, scope: str, owner: str, in_class: bool, in_function: bool) -> None:
         for child in node.children:

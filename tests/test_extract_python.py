@@ -73,3 +73,41 @@ def test_attribute_chains_do_not_corrupt_memory(tmp_path):
     proc = subprocess.run([sys.executable, "-c", code], stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, text=True,
                           cwd=str(tmp_path), env={**os.environ, "PYTHONPATH": str(Path(__file__).resolve().parents[1])})
     assert proc.returncode == 0, f"exit {proc.returncode}: {proc.stderr[-500:]}"
+
+
+def test_syntax_tier_for_contracts():
+    e = ex("src/contracts/c.py")
+    kinds = {a.kind for a in e.ast}
+    assert "module" in kinds and "class_definition" in kinds and "import_from_statement" in kinds
+    cls = next(a for a in e.ast if a.kind == "class_definition")
+    assert cls.norm == "ClassDef" and cls.text == "" and cls.line == 3
+    attr = next(a for a in e.ast if a.kind == "attribute")
+    assert attr.norm == "Attribute" and attr.text == "client.post"
+    by_id = {a.id: a for a in e.ast}
+    names = [by_id[d.dst] for d in e.ast_edges if d.label == "CHILD" and d.src == cls.id and by_id[d.dst].field == "name"]
+    assert [n.text for n in names] == ["Contract"]
+    nxt = [(by_id[d.src].kind, by_id[d.dst].kind) for d in e.ast_edges if d.label == "NEXT" and by_id[d.src].field == "" and by_id[d.src].line == 1]
+    assert ("import_from_statement", "class_definition") in nxt
+
+
+def test_derived_from_points_at_definition_not_decorator():
+    e = extract("m.py", b"@dec\ndef f():\n    pass\n", "m")
+    sym = next(s for s in e.symbols if s.name == "f")
+    link = next(d for d in e.edges if d.label == "DERIVED_FROM" and d.src == sym.id)
+    assert link.dst.endswith(":function_definition")
+    assert any(d.label == "DERIVED_FROM" and d.src == "m.py" and d.dst.endswith(":module") for d in e.edges)
+
+
+def test_norm_is_own_type_only():
+    e = extract("m.py", b"def f(x, y=1):\n    pass\n", "m")
+    by_kind = {}
+    for a in e.ast:
+        by_kind.setdefault(a.kind, []).append(a)
+    assert all(a.norm == "Name" for a in by_kind["identifier"])
+    assert by_kind["default_parameter"][0].norm == "Parameter"
+
+
+def test_text_truncated_and_escaped():
+    e = extract("m.py", b'x = "' + b"a" * 600 + b'"\ny = """l1\nl2"""\n', "m")
+    strings = [a for a in e.ast if a.kind == "string"]
+    assert len(strings[0].text) == 512 and strings[1].text == '"""l1\nl2"""'   # escaping happens in graph.py, not here

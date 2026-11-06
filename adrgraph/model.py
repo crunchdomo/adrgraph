@@ -94,6 +94,8 @@ class Extraction:
     edges: list[Edge] = field(default_factory=list)
     imports: list[RawImport] = field(default_factory=list)
     refs: list[RawRef] = field(default_factory=list)
+    ast: list[AstNode] = field(default_factory=list)
+    ast_edges: list[Edge] = field(default_factory=list)
 
 
 def symbol_id(path: str, qualified: str) -> str:

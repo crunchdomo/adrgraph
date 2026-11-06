@@ -27,7 +27,7 @@ def build(adr_dirs: list[str], src_roots: list[str], excludes: tuple[str, ...], 
             compile_rule(r)  # fail fast with decision/rule in the message, before any scanning
     result = scan(src_roots, excludes)
     graph = Graph(db_path)
-    graph.load(result.units, result.symbols, decisions, result.edges)
+    graph.load(result.units, result.symbols, decisions, result.edges, ast=result.ast, ast_edges=result.ast_edges)
     binds = [(key, node) for key, nodes in bind(graph, decisions).items() for node in nodes]
     graph.load([], [], [], [], binds=binds)
     return graph, decisions, result.warnings
@@ -110,7 +110,7 @@ def _run(args, out, err) -> int:
     try:
         if args.command == "build":
             print(f"built {args.db}: {graph.count('Unit')} units, {graph.count('Symbol')} symbols, "
-                  f"{graph.count('Decision')} decisions, {graph.count('Rule')} rules", file=out)
+                  f"{graph.count('Ast')} syntax nodes, {graph.count('Decision')} decisions, {graph.count('Rule')} rules", file=out)
             return 0
         if args.command == "check":
             result = run_check(graph, decisions, load_baseline(args.baseline))
