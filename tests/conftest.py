@@ -1,6 +1,6 @@
 import pytest
-from srcgraph.graph import Graph
 from srcgraph.model import Unit, Symbol, Edge
+from adrgraph.schema import open_graph
 
 
 def U(path, name):
@@ -14,7 +14,7 @@ def S(path, qualified, line):
 @pytest.fixture
 def layered(tmp_path):
     """Layered app: handlers -> contracts -> gateway, with a db layer and a logger."""
-    g = Graph(str(tmp_path / "layered.lbug"))
+    g = open_graph(str(tmp_path / "layered.lbug"))   # adrgraph tables present so trails can query BINDS
     units = [U("src/handlers/h.py", "handlers.h"), U("src/contracts/c.py", "contracts.c"),
              U("src/gateway/client.py", "gateway.client"), U("src/other/x.py", "other.x"),
              U("src/db/q.py", "db.q"), U("src/log.py", "log")]
