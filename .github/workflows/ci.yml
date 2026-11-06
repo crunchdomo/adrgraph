@@ -12,5 +12,5 @@ jobs:
           python-version: "3.12"
       - run: pip install -e '.[dev]'
       - run: pytest
-      - run: adrgraph check
-      - run: adrgraph audit --strict
+      - run: adrgraph check --exclude tests/fixtures
+      - run: adrgraph audit --strict --exclude tests/fixtures

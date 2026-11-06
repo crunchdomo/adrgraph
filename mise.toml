@@ -5,7 +5,7 @@ python = "3.12"
 run = "pytest"
 
 [tasks.check]
-run = "adrgraph check"
+run = "adrgraph check --exclude tests/fixtures"
 
 [tasks.audit]
-run = "adrgraph audit"
+run = "adrgraph audit --exclude tests/fixtures"
