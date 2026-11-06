@@ -1,0 +1,11 @@
+[tools]
+python = "3.12"
+
+[tasks.test]
+run = "pytest"
+
+[tasks.check]
+run = "adrgraph check"
+
+[tasks.audit]
+run = "adrgraph audit"
