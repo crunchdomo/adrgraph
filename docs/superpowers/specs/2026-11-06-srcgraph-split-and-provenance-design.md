@@ -41,8 +41,6 @@ them (terminal text, HTML report, JSON for the explorer).
 
 ## Non-goals
 
-- Two repositories. Two packages in this one repository first; moving a package out later is
-  cheap, moving half a test suite today is not.
 - Publishing either package. Still waits on PyPI setup.
 - A hosted or multi-user explorer. `serve` binds to localhost for one person.
 - Editing anything through the explorer. Read-only.
@@ -66,11 +64,18 @@ them (terminal text, HTML report, JSON for the explorer).
 - `adrgraph` 0.2.0 behaviour is the compatibility bar: the f1 fork's baseline and hook keep
   working without edits.
 
+## Decided: two repositories
+
+`srcgraph` is its own repository, `crunchdomo/srcgraph`, checked out at `~/Documents/srcgraph`,
+created private (the user makes it public). `adrgraph` stays in `crunchdomo/adrgraph`
+(`~/Documents/adr-as-code`) and becomes the enforcer only. Each repository has its own tests,
+CI, README, licence (MIT), `mise.toml` and `docs/adr/`. The history of the moved modules stays in
+adrgraph's git log; srcgraph starts fresh with one commit that cites the source commit.
+
 ## Decided: repository layout
 
 ```
-packages/
-  srcgraph/
+~/Documents/srcgraph/                              (repo crunchdomo/srcgraph)
     pyproject.toml          name "srcgraph", version 0.1.0
     srcgraph/
       model.py              vocabulary: Unit, Symbol, Edge, AstNode, RawImport, RawRef, NORM_KINDS, TEXT_NORMS, ...
@@ -83,7 +88,10 @@ packages/
       explorer.html         NEW: the single-page explorer
       cli.py                srcgraph build | query | serve
     tests/
-  adrgraph/
+    docs/adr/               ADR-0001 "nothing in srcgraph imports adrgraph" (adrgraph is a dev-only tool here)
+    .github/workflows/ci.yml  pytest, then `adrgraph check` with adrgraph installed from git as a dev tool
+
+~/Documents/adr-as-code/                           (repo crunchdomo/adrgraph)
     pyproject.toml          name "adrgraph", version 0.3.0, dependency srcgraph>=0.1
     adrgraph/
       adr.py, rules.py, check.py, audit.py, baseline.py
@@ -92,31 +100,25 @@ packages/
       render/               NEW: text.py, html.py, json.py
       cli.py                adrgraph build | check | audit | query | explain | report | serve
     tests/
-docs/adr/                   adrgraph's own ADRs (they govern both packages)
-docs/superpowers/
-mise.toml                   tasks: test (both packages), check, audit
-.github/workflows/ci.yml    installs both packages editable, runs both test suites, self-check
-action.yml                  unchanged in behaviour; installs adrgraph (which pulls srcgraph)
+    docs/adr/               ADR-0001..0004 rewritten for the enforcer; ADR-0005 "adrgraph never
+                            re-implements what srcgraph provides" is prose with scope; the direction
+                            rule lives in srcgraph's repo
+    docs/superpowers/
+    mise.toml, .github/workflows/ci.yml, action.yml
 ```
 
-The root `pyproject.toml` goes away. `pip install -e packages/srcgraph -e packages/adrgraph` is
-the dev setup; `mise run test` runs `pytest packages/srcgraph packages/adrgraph`.
-
 **Installing without PyPI.** Until srcgraph is published, adrgraph's `srcgraph>=0.1` dependency
-resolves only when srcgraph is given alongside it. The f1 fork installs from locally built wheels
-through pipx, so the recipe is: `python -m build --wheel` in each package, then
-`pipx install --force packages/adrgraph/dist/adrgraph-0.3.0-py3-none-any.whl --pip-args
-"--find-links packages/srcgraph/dist"`. `action.yml`'s non-tag branch installs both package
-directories in one `pip install`. `pip install <repo-root>` and `pip install git+...` stop
-working, and that is accepted: nothing of ours uses them.
+is satisfied from git: CI runs `pip install git+https://github.com/crunchdomo/srcgraph` before
+`pip install -e .`; the f1 fork's pipx install becomes `pipx install --force <adrgraph wheel>
+--pip-args "git+https://github.com/crunchdomo/srcgraph"`, or two wheels with `--find-links` on a
+local srcgraph build. `action.yml`'s non-tag branch installs srcgraph from git then adrgraph from
+the action path. Development: `pip install -e ~/Documents/srcgraph -e ~/Documents/adr-as-code`.
 
-**Self-check roots.** Module names are relative to the scan root, so the repo's own check runs as
-`adrgraph check --src packages/srcgraph --src packages/adrgraph --exclude "packages/*/tests"`
-(and likewise `audit`), in `mise.toml` and `ci.yml`. With those roots `from srcgraph.graph import
-...` resolves to the real unit and the transitive rules in ADR-0002 and ADR-0005 mean something;
-with the default root they would pass vacuously. The two `tests/` trees are excluded because they
-would collide as module `tests.*` and are not governed by any ADR. ADR paths are written
-relative to the repo root (`packages/srcgraph/srcgraph/extractors/**`).
+**Self-checks.** Each repo checks itself with the default root. In srcgraph the only ADR rule is
+`never from {path: "srcgraph/**"} to {name: "adrgraph*"} via IMPORTS, transitive: true`, and its
+negative control is planting `import adrgraph` into a srcgraph module. In adrgraph the existing
+ADRs keep their rules with paths updated; ADR-0003 (ladybug only in graph.py) moves to srcgraph
+since graph.py does. Neither repo scans the other.
 
 ## Decided: the schema-extension API
 
@@ -281,10 +283,8 @@ In the f1 fork, with both packages installed:
   the excerpt. `adrgraph serve` additionally lists
   the 5 findings and colours `stream.py` red.
 
-In this repository: both test suites pass; `adrgraph check --src packages/srcgraph --src
-packages/adrgraph --exclude "packages/*/tests"` enforces ADR-0001..0005 at 100%, and planting
-`import adrgraph` into any srcgraph module makes ADR-0005 fail (the negative control that proves
-the roots are right).
+In each repository: its test suite passes and `adrgraph check` on it is at 100%; in srcgraph,
+planting `import adrgraph` into a srcgraph module makes its ADR-0001 fail.
 
 ## Known ceilings
 
