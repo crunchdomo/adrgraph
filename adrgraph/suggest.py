@@ -76,11 +76,28 @@ def _must(graph: Graph) -> list[Candidate]:
     return out
 
 
+def _tf_must(graph: Graph) -> list[Candidate]:
+    """Every Terraform resource of type A is referenced by some resource of type B."""
+    rows = graph.query("MATCH (a:Symbol) WHERE a.kind = 'resource' OPTIONAL MATCH (b:Symbol)-[:REFERENCES]->(a) "
+                       "WHERE b.kind = 'resource' RETURN a.name AS name, b.name AS by")
+    rtype = lambda name: name.rsplit(".", 1)[0]
+    by_type: dict[str, dict[str, set]] = defaultdict(lambda: defaultdict(set))
+    for r in rows:
+        by_type[rtype(r["name"])][r["name"]].add(rtype(r["by"]) if r["by"] else None)
+    out = []
+    for a, resources in by_type.items():
+        for b in sorted(set.intersection(*resources.values()) - {None, a}):
+            spec = {"every": {"kind": "resource", "name": f"{a}.*"}, "has": {"kind": "resource", "name": f"{b}.*"},
+                    "via": "REFERENCES", "direction": "in"}
+            out.append(Candidate("must", spec, len(resources), f"Every {a} is referenced by an {b}", _slug(f"{a}-has-{b}")))
+    return out
+
+
 def suggest(graph: Graph, decisions: list[Decision] = (), min_strength: int = 2, include_covered: bool = False) -> list[Candidate]:
     """Candidates that hold on the graph, strongest first. Covered = an active rule with the same shape and target."""
     covered = {(r.shape, str(r.spec.get(_TARGET.get(r.shape)))) for d in decisions if d.status in ("accepted", "proposed")
                for r in d.rules if r.shape in _TARGET}
-    out = [c for c in _only(graph) + _must(graph)
+    out = [c for c in _only(graph) + _must(graph) + _tf_must(graph)
            if c.strength >= min_strength and (include_covered or (c.shape, str(c.spec[_TARGET[c.shape]])) not in covered)
            and not evaluate(graph, Rule(c.rule_id, "ADR-0", c.shape, c.spec, "error", ""))]
     return sorted(out, key=lambda c: (-c.strength, c.rule_id))

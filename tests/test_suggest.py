@@ -87,3 +87,35 @@ def test_candidates_carry_title_and_rule_id(repo):
     assert titles == {"fastf1-only-via-src-data": "Only src/data/** may import fastf1",
                       "pyside6-only-via-src-gui": "Only src/gui/** may import PySide6",
                       "src-insights-classes-inherit-base": "Every class in src/insights/** inherits Base"}
+
+
+def R(path, name):
+    return Symbol(f"{path}::{name}", name, name, "resource", "terraform", path, 1, 2, "block")
+
+
+@pytest.fixture
+def tf(tmp_path):
+    """Two buckets, each referenced by a policy; one also by a notification. One lonely kms key behind a single alias."""
+    g = open_graph(str(tmp_path / "tf.lbug"))
+    g.load_nodes("Unit", [U("infra/main.tf")])
+    names = ["aws_s3_bucket.a", "aws_s3_bucket.b", "aws_s3_bucket_policy.pa", "aws_s3_bucket_policy.pb",
+             "aws_s3_bucket_notification.n", "aws_kms_key.k", "aws_kms_alias.al", "data.aws_iam_policy_document.d"]
+    g.load_nodes("Symbol", [vars(R("infra/main.tf", n)) for n in names])
+    refs = [("aws_s3_bucket_policy.pa", "aws_s3_bucket.a"), ("aws_s3_bucket_policy.pb", "aws_s3_bucket.b"),
+            ("aws_s3_bucket_notification.n", "aws_s3_bucket.a"), ("aws_kms_alias.al", "aws_kms_key.k"),
+            ("aws_s3_bucket_policy.pa", "data.aws_iam_policy_document.d"), ("aws_s3_bucket_policy.pb", "data.aws_iam_policy_document.d")]
+    g.load_edges([Edge("REFERENCES", f"infra/main.tf::{a}", f"infra/main.tf::{b}", line=1) for a, b in refs])
+    yield g
+    g.close()
+
+
+def test_terraform_must_every_resource_of_a_type_is_referenced_by_another_type(tf):
+    cands = suggest(tf)
+    assert [(c.rule_id, c.strength) for c in cands] == [("aws-s3-bucket-has-aws-s3-bucket-policy", 2)]
+    assert cands[0].spec == {"every": {"kind": "resource", "name": "aws_s3_bucket.*"},
+                             "has": {"kind": "resource", "name": "aws_s3_bucket_policy.*"}, "via": "REFERENCES", "direction": "in"}
+    assert cands[0].title == "Every aws_s3_bucket is referenced by an aws_s3_bucket_policy"
+    low = [c.rule_id for c in suggest(tf, min_strength=1)]
+    assert "aws-kms-key-has-aws-kms-alias" in low and "data-aws-iam-policy-document-has-aws-s3-bucket-policy" in low
+    for c in suggest(tf, min_strength=1):
+        assert evaluate(tf, Rule(c.rule_id, "ADR-0", c.shape, c.spec, "error", "")) == []
