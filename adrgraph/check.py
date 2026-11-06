@@ -41,6 +41,14 @@ def bind_scopes(graph: Graph, decisions: list[Decision]) -> dict[str, list[str]]
     return {d.id: sorted({n for sel in d.scope for n in matched_ids(graph, sel)}) for d in decisions if d.scope}
 
 
+def decision_binds(graph: Graph, decisions: list[Decision]) -> dict[str, list[str]]:
+    """Decision id -> every node bound by its rules or its scope (rule keys contain '/', decision ids do not)."""
+    out: dict[str, set[str]] = {}
+    for key, nodes in {**bind(graph, decisions), **bind_scopes(graph, decisions)}.items():
+        out.setdefault(key.split("/", 1)[0], set()).update(nodes)
+    return {k: sorted(v) for k, v in out.items()}
+
+
 def pct(v: float | None) -> str:
     return "n/a" if v is None else f"{v * 100:.1f}%"
 

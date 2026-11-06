@@ -1,4 +1,4 @@
-"""adrgraph command line: build, check, audit, explain, report, suggest, query."""
+"""adrgraph command line: build, check, audit, explain, report, suggest, serve, query."""
 import argparse
 import datetime
 import json
@@ -6,6 +6,7 @@ import os
 import sys
 from dataclasses import asdict
 
+from srcgraph.cli import serve as srcgraph_serve
 from srcgraph.graph import Graph
 from srcgraph.model import Edge
 from srcgraph.scan import DEFAULT_EXCLUDES, scan
@@ -15,11 +16,12 @@ from adrgraph import __version__
 from adrgraph.adr import AdrError, Decision, load_adrs
 from adrgraph.audit import run_audit
 from adrgraph.baseline import load_baseline, save_baseline
-from adrgraph.check import bind, bind_scopes, pct, run_check
+from adrgraph.check import bind, bind_scopes, decision_binds, pct, run_check
 from adrgraph.render.html import render_html
 from adrgraph.render.text import render_text
 from adrgraph.rules import RuleError, compile_rule, portability
 from adrgraph.schema import load_adrs as load_adr_graph, open_graph
+from adrgraph.serve import overlay_routes
 from adrgraph.suggest import rule_yaml, suggest, write_draft
 from adrgraph.trail import build_trail, trail_dict
 from srcgraph.source import Source
@@ -85,6 +87,11 @@ def _parser() -> argparse.ArgumentParser:
     s.add_argument("--min", type=int, default=2, help="minimum backing edges or classes (default 2)")
     s.add_argument("--all", action="store_true", help="include candidates an existing rule already covers")
     s.add_argument("--write", action="store_true", help="write each candidate as a proposed ADR in the first --adr dir")
+    sv = sub.add_parser("serve", help="open srcgraph's explorer with the findings overlay")
+    common(sv)
+    sv.add_argument("--baseline", default=BASELINE)
+    sv.add_argument("--port", type=int, default=8765)
+    sv.add_argument("--allow-query", action="store_true", help="enable POST /api/query (raw Cypher)")
     q = sub.add_parser("query", help="run Cypher against the last built graph")
     q.add_argument("--db", default=DB)
     q.add_argument("--format", choices=["text", "json"], default="text")
@@ -214,15 +221,17 @@ def _run(args, out, err) -> int:
             result = run_check(graph, decisions, load_baseline(args.baseline))
             source = Source(".")
             trails = [build_trail(graph, decisions, f, result.findings, args.baseline, source.lines) for f in result.findings]
-            binds: dict[str, set[str]] = {}
-            for key, nodes in {**bind(graph, decisions), **bind_scopes(graph, decisions)}.items():
-                binds.setdefault(key.split("/", 1)[0], set()).update(nodes)
-            binds = {k: sorted(v) for k, v in binds.items()}
+            binds = decision_binds(graph, decisions)
             os.makedirs(os.path.dirname(os.path.abspath(args.output)), exist_ok=True)
             with open(args.output, "w", encoding="utf-8") as fh:
                 fh.write(render_html(trails, decisions, result.metrics, binds))
             print(f"wrote {args.output} ({len(trails)} findings)", file=out)
             return 0
+        if args.command == "serve":
+            result = run_check(graph, decisions, load_baseline(args.baseline))
+            source = Source(".")
+            return srcgraph_serve(graph, source, args.port, args.allow_query, out,
+                                  overlay_routes(graph, decisions, result, args.baseline, source))
         if args.command == "suggest":
             cands = suggest(graph, decisions, args.min, args.all)
             if not cands:

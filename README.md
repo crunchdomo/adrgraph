@@ -15,7 +15,7 @@ pipx install adrgraph        # or: pip install adrgraph inside a virtualenv
 Until both packages are on PyPI, install straight from git:
 
 ```bash
-pipx install git+https://github.com/crunchdomo/adrgraph --pip-args "git+https://github.com/crunchdomo/srcgraph@v0.1.0"
+pipx install git+https://github.com/crunchdomo/adrgraph --pip-args "git+https://github.com/crunchdomo/srcgraph@v0.2.0"
 ```
 
 Python 3.11 or later. Python and Terraform (HCL) are supported out of the box.
@@ -112,6 +112,7 @@ adrgraph explain ADR-0004/my-rule     # every finding of one rule
 adrgraph report                       # .adrgraph/report.html: every finding as a trail, every ADR with what it binds
 adrgraph check --format json --trails # machine-readable findings with their trails
 adrgraph suggest                      # rules for invariants the code already keeps; --write drafts them as proposed ADRs
+adrgraph serve                        # srcgraph's explorer at http://127.0.0.1:8765 with findings listed and violating nodes marked
 adrgraph build                        # just build .adrgraph/graph.lbug
 adrgraph query "<cypher>"             # ad hoc Cypher against the last build
 ```

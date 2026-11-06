@@ -28,7 +28,7 @@ runs:
         if [[ "$ref" =~ ^v?[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
           pip install "adrgraph==${ref#v}"
         else
-          pip install git+https://github.com/crunchdomo/srcgraph@v0.1.0 "${{ github.action_path }}"
+          pip install git+https://github.com/crunchdomo/srcgraph@v0.2.0 "${{ github.action_path }}"
         fi
     - shell: bash
       run: |
