@@ -187,7 +187,7 @@ Pin `adrgraph==<version>` in your dev requirements so everyone builds the same g
 
 ### Performance
 
-Measured with LadybugDB 0.22.1: a 17k-line repo builds its full two-tier graph (110k syntax nodes) in about 3 seconds; Django at 531k lines (3.0M syntax nodes, 4.5M edges) in about 25 seconds, producing a 630 MB database file, with 2-hop queries answering in tens of milliseconds. The syntax tier is always on.
+Measured with LadybugDB 0.22.1: a 17k-line repo builds its full two-tier graph (110k syntax nodes) in about 3 seconds; Django at 532k lines (3.0M syntax nodes) in about 170 seconds on an M1 Pro, producing a 680 MB database file, with 2-hop queries answering in tens of milliseconds. The syntax tier is always on.
 
 ## GitHub Action
 
